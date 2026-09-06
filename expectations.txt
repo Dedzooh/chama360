@@ -1,0 +1,196 @@
+Recommended stack (simple + production-ready)
+
+Backend: Node.js + Express
+
+DB: PostgreSQL (best for money/ledger + reports) via Prisma ORM
+
+Auth: JWT (access) + refresh tokens, OTP optional later
+
+Storage: S3-compatible (or local first) for receipts/minutes/IDs
+
+Validation: Zod or Joi
+
+Logging: pino + audit logs table
+
+Deploy: Docker + Render/Fly/EC2
+
+Core concepts (how we model the 3 chama types)
+
+Each Chama has a type:
+
+ROSCA = merry-go-round (rotating payout)
+
+ASCA = end-of-year (pool + loans + share-out)
+
+NORMAL = governance-heavy chama (pool + loans + investments optional)
+
+Same members + contributions tables… but rules & flows differ by type.
+
+Database design (Prisma-style entities)
+Users & membership + approvals
+
+User: id, phone/email, name, passwordHash (or OTP-only), createdAt
+
+Chama: id, name, type (ROSCA/ASCA/NORMAL), currency, createdBy
+
+Membership: id, chamaId, userId, role (CHAIR/TREAS/SEC/MEMBER/AUDITOR), status (PENDING/ACTIVE/REJECTED/SUSPENDED), joinedAt
+
+JoinRequest (optional if not using Membership status): membershipId, reviewedBy, decision, reason, reviewedAt
+
+Contributions + cycles
+
+ContributionCycle: id, chamaId, title, frequency, startDate, endDate, expectedAmount, status
+
+Payment: id, chamaId, memberId, cycleId (nullable), purpose (CONTRIBUTION/LOAN_REPAYMENT/FINE/OTHER), amount, method (MPESA/CASH/BANK), reference, paidAt, verifiedBy, status (PENDING/VERIFIED/REVERSED)
+
+ROSCA (merry-go-round)
+
+RoscaRound: id, chamaId, cycleId(optional), contributionAmount, frequency, rulesJson
+
+RoscaPayout: id, roundId, payoutDate, recipientMemberId, potAmount, status (SCHEDULED/PAID/SKIPPED), paidBy, proofUrl
+
+Loans + tiered interest rules
+
+LoanPolicy: id, chamaId, interestModel (FLAT/REDUCING/TIERED), configJson
+
+Loan: id, chamaId, borrowerMemberId, principal, interestRate, interestModel, termMonths, status (REQUESTED/APPROVED/DISBURSED/CLOSED/DEFAULTED), requestedAt, disbursedAt
+
+LoanApproval: id, loanId, approverMemberId, decision, decidedAt, note
+
+LoanSchedule: id, loanId, dueDate, amountDue, principalDue, interestDue, status (DUE/PAID/LATE)
+
+Guarantor (optional): loanId, guarantorMemberId, status (PENDING/ACCEPTED/REJECTED)
+
+Fines + meetings (optional in MVP but easy)
+
+Fine: id, chamaId, memberId, reason, amount, cycleId(optional), status (DUE/PAID/WAIVED)
+
+Meeting: id, chamaId, date, agenda, minutesUrl
+
+Attendance: meetingId, memberId, status (PRESENT/ABSENT)
+
+Share-out (end-of-year)
+
+SharePeriod: id, chamaId, startDate, endDate, status (OPEN/CLOSED)
+
+ShareOut: id, periodId, memberId, savingsTotal, interestEarned, fines, netPayout, status (PENDING/PAID)
+
+Trust & audit
+
+AuditLog: id, chamaId, actorMemberId, action, entity, entityId, beforeJson, afterJson, createdAt
+
+API routes (Express)
+Auth
+
+POST /auth/register
+
+POST /auth/login
+
+POST /auth/refresh
+
+POST /auth/logout
+
+Chama + membership
+
+POST /chamas (create chama)
+
+GET /chamas/:id
+
+POST /chamas/:id/join (creates PENDING membership)
+
+GET /chamas/:id/members?status=pending
+
+POST /memberships/:id/approve ✅ chairman/admin only
+
+POST /memberships/:id/reject ✅ chairman/admin only
+
+PATCH /memberships/:id/role ✅ chairman/admin only
+
+Contributions + payments
+
+POST /cycles (create cycle)
+
+GET /cycles/:id
+
+POST /payments (record payment)
+
+POST /payments/:id/verify ✅ treasurer/chair
+
+POST /payments/:id/reverse ✅ chair + audit
+
+ROSCA
+
+POST /rosca/rounds
+
+POST /rosca/rounds/:id/generate-payouts
+
+GET /rosca/rounds/:id/payouts
+
+POST /rosca/payouts/:id/mark-paid ✅ treasurer/chair
+
+POST /rosca/payouts/:id/swap-recipient ✅ chair (with rules)
+
+Loans
+
+POST /loan-policy ✅ chair/admin
+
+POST /loans/request
+
+POST /loans/:id/approve ✅ committee/chair
+
+POST /loans/:id/disburse ✅ treasurer + chair (2-step optional)
+
+GET /loans/:id/schedule
+
+POST /loans/:id/repay (creates payment + marks schedule)
+
+Share-out
+
+POST /share-periods/open
+
+POST /share-periods/:id/calculate
+
+POST /share-periods/:id/close
+
+GET /share-periods/:id/summary
+
+Reports
+
+GET /reports/member-statement?memberId=&from=&to=
+
+GET /reports/chama-summary?from=&to=
+
+GET /reports/arrears
+Tiered interest (how we implement “depends on amount”)
+
+LoanPolicy.configJson example:
+
+{
+  "tiers": [
+    { "min": 1000, "max": 10000, "rateMonthly": 0.05 },
+    { "min": 10001, "max": 50000, "rateMonthly": 0.04 },
+    { "min": 50001, "max": null, "rateMonthly": 0.03 }
+  ],
+  "lateFeeMonthly": 0.02
+}
+
+
+When a loan is requested:
+
+pick the tier by principal
+
+lock interestRate into the Loan row (so policy edits don’t change old loans)
+
+generate repayment schedule
+
+Permission rules (simple)
+
+Member: view own statement, pay, request loan
+
+Secretary: meetings + minutes
+
+Treasurer: record/verify payments, disburse (if allowed)
+
+Chair/Admin: approve members, roles, reverse payments, approve/close share-out
+
+Auditor: read-only + reports + audit logs

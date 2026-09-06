@@ -1,0 +1,1368 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  phone          String   @unique
+  nationalId     String?  @unique // Legacy only; cleared by identity backfill
+  nationalIdHash String?  @unique
+  nationalIdLast4 String?
+  firstName      String
+  lastName       String
+  passwordHash   String
+  kycStatus      KycStatus @default(PENDING)
+  isActive       Boolean  @default(true)
+  mfaSecret      String?
+  mfaEnabled     Boolean  @default(false)
+  lastLoginAt    DateTime?
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  termsAcceptedAt DateTime?
+  privacyAcceptedAt DateTime?
+  legalVersion    String?
+  deletionRequestedAt DateTime?
+  deletionScheduledFor DateTime?
+  anonymizedAt    DateTime?
+  deletionReason  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  refreshTokens  RefreshToken[]
+  mfaRecoveryCodes MfaRecoveryCode[]
+  notificationPreferences NotificationPreferences?
+  organizationCreated Organization[] @relation("OrganizationCreatedBy")
+  chamaCreated   Chama[] @relation("ChamaCreatedBy")
+  organizationMemberships OrganizationMember[]
+  chamaMemberships ChamaMembership[]
+  contributions  Contribution[]
+  contributionsRecorded Contribution[] @relation("ContributionRecordedBy")
+  contributionsReversed Contribution[] @relation("ContributionReversedBy")
+  borrowedLoans  Loan[] @relation("BorrowerLoans")
+  loanApplications Loan[] @relation("LoanRequestedBy")
+  loansReviewed Loan[] @relation("LoanReviewedBy")
+  loanRepaymentsRecorded LoanRepayment[] @relation("LoanRepaymentRecordedBy")
+  loanGuarantors LoanGuarantor[]
+  loanRepayments LoanRepayment[]
+  transactionsFrom Transaction[] @relation("TransactionFrom")
+  transactionsTo Transaction[] @relation("TransactionTo")
+  disputesRaised Dispute[] @relation("DisputeRaiser")
+  disputesAgainst Dispute[] @relation("DisputeTarget")
+  evidenceUploads Evidence[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+  welfareClaimsRequested WelfareClaim[] @relation("WelfareClaimRequestedBy")
+  welfareClaimsReviewed WelfareClaim[] @relation("WelfareClaimReviewedBy")
+  meetingsCreated Meeting[] @relation("MeetingCreatedBy")
+  meetingAttendanceMarked MeetingAttendance[] @relation("MeetingAttendanceMember")
+  meetingAttendanceRecorded MeetingAttendance[] @relation("MeetingAttendanceRecordedBy")
+  votesCreated Vote[] @relation("VoteCreatedBy")
+  votesClosed Vote[] @relation("VoteClosedBy")
+  voteResponses VoteCast[] @relation("VoteResponseMember")
+  organizationAuditLogs OrganizationAuditLog[]
+  subscription   Subscription?
+  planChangeRequests PlanChangeRequest[]
+  customPlanRequests CustomPlanRequest[]
+  contributionAllocations ContributionAllocation[]
+  contributionCredits ContributionCredit[]
+  kycDocuments    KycDocument[]
+
+  @@index([kycStatus])
+  @@index([isActive])
+  @@index([deletionScheduledFor, anonymizedAt])
+  @@map("users")
+}
+
+model KycDocument {
+  id                  String            @id @default(cuid())
+  userId              String
+  type                String
+  status              KycDocumentStatus @default(PENDING)
+  frontObjectKey      String
+  frontContentType    String
+  backObjectKey       String?
+  backContentType     String?
+  documentNumberHash  String
+  documentNumberLast4 String
+  issueDate           DateTime?
+  expiryDate          DateTime?
+  issuingAuthority    String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([documentNumberHash])
+  @@map("kyc_documents")
+}
+
+enum KycDocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  GROWTH
+  PRO
+  INVESTMENT_AUTOMATION
+  ENTERPRISE
+}
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+enum BillingDocumentType {
+  INVOICE
+  RECEIPT
+  CREDIT_NOTE
+}
+
+enum BillingDocumentStatus {
+  ISSUED
+  PAID
+  VOID
+  REFUNDED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum PlanChangeStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  plan               SubscriptionPlan   @default(FREE)
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime            @default(now())
+  currentPeriodEnd   DateTime?
+  gracePeriodEnd     DateTime?
+  cancelAtPeriodEnd  Boolean             @default(false)
+  provider           String?
+  providerReference  String?             @unique
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([plan, status])
+  @@map("subscriptions")
+}
+
+model PlanChangeRequest {
+  id                String           @id @default(cuid())
+  userId            String
+  organizationId    String?
+  requestedPlan     SubscriptionPlan
+  billingCycle      BillingCycle     @default(MONTHLY)
+  amount            Decimal          @db.Decimal(12, 2)
+  currency          String           @default("KES")
+  phone             String?
+  status            PlanChangeStatus @default(PENDING)
+  checkoutRequestId String?          @unique
+  merchantRequestId String?
+  receiptNumber     String?
+  failureReason     String?
+  paidAt            DateTime?
+  callbackPayload   Json?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization      Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  billingDocuments  BillingDocument[]
+
+  @@index([userId, status])
+  @@index([organizationId, status])
+  @@map("plan_change_requests")
+}
+
+model OrganizationSubscription {
+  id                 String             @id @default(cuid())
+  organizationId     String             @unique
+  plan               SubscriptionPlan   @default(FREE)
+  status             SubscriptionStatus @default(ACTIVE)
+  billingCycle       BillingCycle       @default(MONTHLY)
+  trialEndsAt        DateTime?
+  currentPeriodStart DateTime            @default(now())
+  currentPeriodEnd   DateTime?
+  gracePeriodEnd     DateTime?
+  cancelAtPeriodEnd  Boolean             @default(false)
+  provider           String?
+  providerReference  String?             @unique
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([plan, status])
+  @@map("organization_subscriptions")
+}
+
+model BillingDocument {
+  id                 String                @id @default(cuid())
+  documentNumber     String                @unique
+  type               BillingDocumentType
+  status             BillingDocumentStatus @default(ISSUED)
+  organizationId     String
+  paymentRequestId   String?
+  plan               SubscriptionPlan
+  billingCycle       BillingCycle
+  currency           String                @default("KES")
+  subtotal           Decimal               @db.Decimal(12, 2)
+  taxRate            Decimal               @default(0) @db.Decimal(6, 3)
+  taxAmount          Decimal               @default(0) @db.Decimal(12, 2)
+  total              Decimal               @db.Decimal(12, 2)
+  periodStart        DateTime?
+  periodEnd          DateTime?
+  paymentReference   String?
+  issuedAt           DateTime              @default(now())
+  paidAt             DateTime?
+  metadata           Json?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  organization       Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentRequest     PlanChangeRequest?     @relation(fields: [paymentRequestId], references: [id], onDelete: SetNull)
+
+  @@unique([paymentRequestId, type])
+  @@index([organizationId, issuedAt])
+  @@index([status, type])
+  @@map("billing_documents")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  isRevoked  Boolean  @default(false)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Organization {
+  id             String   @id @default(cuid())
+  name           String
+  organizationType String
+  chamaType      String?
+  enabledModules Json?
+  slug           String   @unique
+  description    String?
+  status         OrganizationStatus @default(DRAFT)
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  metadata       Json?
+
+  creator        User     @relation("OrganizationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  chama          Chama?   @relation("OrganizationChama")
+  members        OrganizationMember[]
+  roles          OrganizationRole[]
+  permissions    OrganizationPermission[]
+  wallet         OrganizationWallet?
+  settings       OrganizationSettings?
+  committees     OrganizationCommittee[]
+  branches       OrganizationBranch[]
+  contributions  Contribution[]
+  loans          Loan[]
+  meetingsAttendance MeetingAttendance[]
+  voteResponses  VoteCast[]
+  disputes       Dispute[]
+  votes          Vote[]
+  notifications  Notification[]
+  auditLogs      OrganizationAuditLog[]
+  systemAuditLogs AuditLog[]
+  welfareClaims  WelfareClaim[]
+  meetings       Meeting[]
+  loanRepayments LoanRepayment[]
+  transactions   Transaction[]
+  subscription   OrganizationSubscription?
+  planChangeRequests PlanChangeRequest[]
+  billingDocuments BillingDocument[]
+  customPlanRequests CustomPlanRequest[]
+  contributionAllocations ContributionAllocation[]
+  contributionCredits ContributionCredit[]
+
+  @@index([organizationType])
+  @@index([status])
+  @@index([createdById])
+  @@map("organizations")
+}
+
+model MfaRecoveryCode {
+  id        String   @id @default(cuid())
+  userId    String
+  codeHash  String   @unique
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+  @@map("mfa_recovery_codes")
+}
+
+model CustomPlanRequest {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  requestedById      String
+  contactName        String
+  contactEmail       String
+  contactPhone       String?
+  estimatedMembers   Int?
+  requirements       String
+  preferredTimeline  String?
+  status             String   @default("SUBMITTED")
+  adminNotes         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedBy        User @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([status, createdAt])
+  @@map("custom_plan_requests")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  roleId         String?
+  status         OrganizationMemberStatus @default(PENDING)
+  joinedAt       DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  metadata       Json?
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           OrganizationRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, status])
+  @@index([userId, status])
+  @@map("organization_members")
+}
+
+model OrganizationRole {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           MemberRole
+  label          String
+  permissions    Json?
+  isSystemDefault Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        OrganizationMember[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("organization_roles")
+}
+
+model OrganizationPermission {
+  id             String   @id @default(cuid())
+  organizationId String
+  key            String
+  label          String
+  description    String?
+  isSystemDefault Boolean @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@map("organization_permissions")
+}
+
+model OrganizationWallet {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  balance        Decimal  @default(0) @db.Decimal(14, 2)
+  currency       String   @default("KES")
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_wallets")
+}
+
+model OrganizationSettings {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  contributionRules Json?
+  welfareRules   Json?
+  loanRules      Json?
+  notificationRules Json?
+  securityRules  Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_settings")
+}
+
+model OrganizationCommittee {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  status         OrganizationCommitteeStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, status])
+  @@map("organization_committees")
+}
+
+model OrganizationBranch {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  code           String?
+  location       String?
+  status         OrganizationBranchStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, status])
+  @@map("organization_branches")
+}
+
+model Chama {
+  id             String   @id @default(cuid())
+  name           String
+  shortCode      String?  @unique
+  description    String?
+  type           ChamaType
+  visibility     Visibility @default(INVITE_ONLY)
+  status         ChamaStatus @default(DRAFT)
+  maxMembers     Int      @default(50)
+  contributionAmount Decimal @default(0) @db.Decimal(10, 2)
+  contributionFrequency Frequency @default(MONTHLY)
+  currency       String   @default("KES")
+  shareableLink  String?  @unique
+  qrCode         String?
+  county         String?
+  town           String?
+  phone          String?
+  logoUrl        String?
+  createdById    String
+  organizationId String?  @unique
+  modules        Json?
+  settings       Json?
+  metadata       Json?
+  activatedAt    DateTime?
+  suspendedAt    DateTime?
+  closedAt       DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  creator        User         @relation("ChamaCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  organization   Organization? @relation("OrganizationChama", fields: [organizationId], references: [id], onDelete: SetNull)
+  memberships    ChamaMembership[]
+  contributions  Contribution[]
+  loans          Loan[]
+  transactions   Transaction[]
+  disputes       Dispute[]
+  votes          Vote[]
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+
+  @@index([type])
+  @@index([status])
+  @@index([visibility, status])
+  @@index([createdById])
+  @@map("chamas")
+}
+
+model ChamaMembership {
+  chamaId            String
+  userId             String
+  role               MemberRole @default(MEMBER)
+  status             MemberStatus @default(PENDING)
+  reliabilityScore   Decimal @default(0) @db.Decimal(5, 2)
+  invitedAt          DateTime?
+  approvedAt         DateTime?
+  suspendedAt        DateTime?
+  exitedAt           DateTime?
+  archivedAt         DateTime?
+  joinedAt           DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  chama              Chama @relation(fields: [chamaId], references: [id], onDelete: Cascade)
+  user               User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([chamaId, userId])
+  @@index([status])
+  @@index([role])
+  @@index([userId, status])
+  @@index([chamaId, status])
+  @@index([reliabilityScore])
+  @@map("chama_memberships")
+}
+
+model Contribution {
+  id             String   @id @default(cuid())
+  chamaId        String
+  organizationId String?
+  memberId       String
+  amount         Decimal  @db.Decimal(10, 2)
+  contributionType String?
+  period         String?
+  dueDate        DateTime
+  paidDate       DateTime?
+  paidAt         DateTime?
+  status         ContributionStatus @default(PENDING)
+  paymentMethod  PaymentMethod?
+  reference      String?
+  transactionRef String?
+  recordedById   String?
+  reversedById   String?
+  reverseReason  String?
+  reversedAt     DateTime?
+  penalties      Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  chama          Chama @relation(fields: [chamaId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  member         User  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  recordedBy     User? @relation("ContributionRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  reversedBy     User? @relation("ContributionReversedBy", fields: [reversedById], references: [id], onDelete: SetNull)
+  allocations    ContributionAllocation[]
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([chamaId, status])
+  @@index([organizationId, status])
+  @@index([memberId, status])
+  @@index([chamaId, dueDate])
+  @@index([organizationId, dueDate])
+  @@index([transactionRef])
+  @@index([reference])
+  @@index([recordedById])
+  @@map("contributions")
+}
+
+model ContributionAllocation {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  sourceContributionId String
+  memberId             String
+  period               String
+  amount               Decimal  @db.Decimal(10, 2)
+  monthlyAmount        Decimal  @db.Decimal(10, 2)
+  allocatedAt          DateTime @default(now())
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourceContribution Contribution @relation(fields: [sourceContributionId], references: [id], onDelete: Cascade)
+  member             User @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceContributionId, period])
+  @@index([organizationId, memberId, period])
+  @@map("contribution_allocations")
+}
+
+model ContributionCredit {
+  id             String   @id @default(cuid())
+  organizationId String
+  memberId       String
+  balance        Decimal  @default(0) @db.Decimal(10, 2)
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  member       User @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, memberId])
+  @@index([memberId])
+  @@map("contribution_credits")
+}
+
+model Loan {
+  id                   String   @id @default(cuid())
+  chamaId              String
+  organizationId       String?
+  borrowerId           String
+  memberId             String?
+  amountRequested      Decimal  @db.Decimal(14, 2)
+  amountApproved       Decimal? @db.Decimal(14, 2)
+  amount               Decimal  @db.Decimal(14, 2)
+  purpose              String?
+  interestRate         Decimal  @db.Decimal(5, 2)
+  repaymentPeriodMonths Int?
+  guarantorsData       Json?
+  status               LoanStatus @default(PENDING)
+  reviewedById         String?
+  reviewedAt           DateTime?
+  disbursedAt          DateTime?
+  dueDate              DateTime?
+  balance              Decimal  @db.Decimal(14, 2)
+  riskScore            Decimal  @default(0) @db.Decimal(5, 2)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  chama                Chama @relation(fields: [chamaId], references: [id], onDelete: Cascade)
+  organization         Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  borrower             User  @relation("BorrowerLoans", fields: [borrowerId], references: [id], onDelete: Cascade)
+  requestedBy          User? @relation("LoanRequestedBy", fields: [memberId], references: [id], onDelete: SetNull)
+  reviewedBy           User? @relation("LoanReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  guarantors           LoanGuarantor[]
+  repayments           LoanRepayment[]
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([chamaId, status])
+  @@index([organizationId, status])
+  @@index([borrowerId, status])
+  @@index([memberId, status])
+  @@index([reviewedById])
+  @@index([riskScore])
+  @@map("loans")
+}
+
+model LoanGuarantor {
+  id               String   @id @default(cuid())
+  loanId           String
+  memberId         String
+  guaranteedAmount Decimal  @db.Decimal(10, 2)
+  collateralLocked Decimal  @default(0) @db.Decimal(10, 2)
+  status           GuarantorStatus @default(ACTIVE)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  loan             Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  member           User @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([loanId])
+  @@index([memberId])
+  @@map("loan_guarantors")
+}
+model LoanRepayment {
+  id             String   @id @default(cuid())
+  organizationId String
+  loanId         String
+  memberId       String
+  amount         Decimal  @db.Decimal(10, 2)
+  paymentMethod  PaymentMethod?
+  reference      String?
+  recordedById   String?
+  paidAt         DateTime?
+  status         LoanRepaymentStatus @default(PENDING)
+  repaidAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  loan           Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  member         User @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  recordedBy     User? @relation("LoanRepaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([loanId])
+  @@index([memberId])
+  @@index([recordedById])
+  @@map("loan_repayments")
+}
+
+model Transaction {
+  id             String   @id @default(cuid())
+  chamaId        String
+  organizationId String?
+  type           TransactionType
+  amount         Decimal  @db.Decimal(10, 2)
+  fromMemberId   String?
+  toMemberId     String?
+  reference      String   @unique
+  idempotencyKey String   @unique
+  status         TransactionStatus @default(PENDING)
+  metadata       Json?
+  activatedAt    DateTime?
+  suspendedAt    DateTime?
+  closedAt       DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  chama          Chama @relation(fields: [chamaId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  fromMember     User? @relation("TransactionFrom", fields: [fromMemberId], references: [id])
+  toMember       User? @relation("TransactionTo", fields: [toMemberId], references: [id])
+
+  @@index([type])
+  @@index([status])
+  @@index([chamaId, type])
+  @@index([organizationId, type])
+  @@index([chamaId, status])
+  @@index([organizationId, status])
+  @@index([fromMemberId])
+  @@index([toMemberId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Dispute {
+  id                 String   @id @default(cuid())
+  chamaId            String
+  organizationId     String?
+  raisedBy           String
+  againstMember      String?
+  relatedTransaction String?
+  category           DisputeCategory
+  description        String
+  status             DisputeStatus @default(OPEN)
+  resolution         Json?
+  immutableHash      String   @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  chama              Chama @relation(fields: [chamaId], references: [id], onDelete: Cascade)
+  organization       Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  raiser             User @relation("DisputeRaiser", fields: [raisedBy], references: [id])
+  targetMember       User? @relation("DisputeTarget", fields: [againstMember], references: [id])
+  evidence           Evidence[]
+
+  @@index([organizationId, status])
+  @@map("disputes")
+}
+
+model Evidence {
+  id           String   @id @default(cuid())
+  disputeId    String
+  type         EvidenceType
+  filename     String
+  s3Key        String
+  uploadedBy   String
+  hash         String
+  uploadedAt   DateTime @default(now())
+
+  dispute      Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  uploader     User @relation(fields: [uploadedBy], references: [id])
+
+  @@map("evidence")
+}
+
+model Vote {
+  id             String   @id @default(cuid())
+  chamaId        String
+  organizationId String?
+  meetingId      String?
+  createdById    String?
+  closedById     String?
+  title          String
+  description    String
+  type           VoteType
+  quorumRequired Int
+  startDate      DateTime
+  endDate        DateTime
+  closesAt       DateTime?
+  status         VoteStatus @default(DRAFT)
+  isAnonymous    Boolean  @default(false)
+  autoExecute    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  chama          Chama @relation(fields: [chamaId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  meeting        Meeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  createdBy      User? @relation("VoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  closedBy       User? @relation("VoteClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  options        VoteOption[]
+  responses      VoteCast[]
+
+  @@index([organizationId, status])
+  @@index([meetingId, status])
+  @@index([closedById])
+  @@map("votes")
+}
+
+model VoteOption {
+  id        String   @id @default(cuid())
+  voteId    String
+  text      String
+  weight    Int      @default(1)
+
+  vote      Vote @relation(fields: [voteId], references: [id], onDelete: Cascade)
+
+  @@map("vote_options")
+}
+
+model VoteCast {
+  id               String   @id @default(cuid())
+  organizationId   String
+  voteId           String
+  memberId         String
+  selectedOption   String
+  votedAt          DateTime @default(now())
+  weight           Int      @default(1)
+  isAnonymous      Boolean  @default(false)
+  castAt           DateTime @default(now())
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vote             Vote @relation(fields: [voteId], references: [id], onDelete: Cascade)
+  member           User @relation("VoteResponseMember", fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([voteId, memberId])
+  @@index([organizationId, voteId])
+  @@map("vote_casts")
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  dedupeKey      String?  @unique
+  recipientId    String
+  chamaId        String?
+  organizationId String?
+  type           NotificationType
+  priority       NotificationPriority @default(INFO)
+  title          String
+  message        String
+  status         NotificationStatus @default(PENDING)
+  scheduledFor   DateTime?
+  sentAt         DateTime?
+  acknowledgedAt DateTime?
+  createdAt      DateTime @default(now())
+
+  recipient      User @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  chama          Chama? @relation(fields: [chamaId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  channels       NotificationChannel[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([type])
+  @@index([recipientId, status])
+  @@index([chamaId, status])
+  @@index([organizationId, status])
+  @@index([scheduledFor])
+  @@map("notifications")
+}
+
+model NotificationChannel {
+  id             String   @id @default(cuid())
+  notificationId String
+  type           NotificationChannelType
+  address        String
+  status         NotificationChannelStatus @default(PENDING)
+  deliveredAt    DateTime?
+  errorMessage   String?
+  retryCount     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([type])
+  @@index([notificationId, status])
+  @@map("notification_channels")
+}
+
+model NotificationPreferences {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  smsEnabled        Boolean  @default(true)
+  emailEnabled      Boolean  @default(true)
+  pushEnabled       Boolean  @default(true)
+  inAppEnabled      Boolean  @default(true)
+  quietHoursStart   String?
+  quietHoursEnd     String?
+  priorityOverride  Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model BackgroundJob {
+  id          String   @id @default(cuid())
+  type        BackgroundJobType
+  status      BackgroundJobStatus @default(PENDING)
+  payload     Json?
+  result      Json?
+  error       String?
+  retryCount  Int      @default(0)
+  maxRetries  Int      @default(3)
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([scheduledAt])
+  @@index([type, status])
+  @@map("background_jobs")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  action         AuditAction
+  entityType     String
+  entityId       String
+  userId         String?
+  chamaId        String?
+  organizationId String?
+  oldValues      Json?
+  newValues      Json?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  user           User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  chama          Chama? @relation(fields: [chamaId], references: [id], onDelete: SetNull)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([userId])
+  @@index([chamaId])
+  @@index([organizationId])
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model WelfareClaim {
+  id               String   @id @default(cuid())
+  organizationId   String
+  requestedById    String
+  memberId         String?
+  type             WelfareClaimType
+  claimType        String?
+  amountRequested  Decimal  @db.Decimal(14, 2)
+  amountApproved   Decimal? @db.Decimal(14, 2)
+  reason           String?
+  status           WelfareClaimStatus @default(PENDING)
+  description      String
+  documents        Json?
+  supportingDocuments Json?
+  reviewedById     String?
+  reviewedAt       DateTime?
+  paidAt           DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requestedBy      User @relation("WelfareClaimRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedBy       User? @relation("WelfareClaimReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([requestedById, status])
+  @@map("welfare_claims")
+}
+
+model Meeting {
+  id             String   @id @default(cuid())
+  organizationId String
+  createdById    String
+  title          String
+  dateTime       DateTime
+  venue          String?
+  agenda         Json?
+  minutes        Json?
+  scheduledFor   DateTime?
+  location       String?
+  status         MeetingStatus @default(SCHEDULED)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User @relation("MeetingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  attendance     MeetingAttendance[]
+  votes          Vote[]
+
+  @@index([organizationId, status])
+  @@index([dateTime])
+  @@map("meetings")
+}
+
+model MeetingAttendance {
+  id             String   @id @default(cuid())
+  organizationId String
+  meetingId      String
+  memberId       String
+  status         AttendanceStatus @default(ABSENT)
+  notes          String?
+  recordedById   String?
+  recordedAt     DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  meeting        Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member         User @relation("MeetingAttendanceMember", fields: [memberId], references: [id], onDelete: Cascade)
+  recordedBy     User? @relation("MeetingAttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@unique([meetingId, memberId])
+  @@index([organizationId, meetingId])
+  @@index([memberId])
+  @@index([recordedById])
+  @@map("meeting_attendance")
+}
+
+model OrganizationAuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  action         AuditAction
+  entityType     String
+  entityId       String
+  userId         String?
+  oldValues      Json?
+  newValues      Json?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([organizationId, entityType, entityId])
+  @@map("organization_audit_logs")
+}
+enum KycStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum OrganizationStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  CLOSED
+  ARCHIVED
+}
+
+enum OrganizationMemberStatus {
+  INVITATION_SENT
+  PENDING_APPROVAL
+  PENDING
+  ACTIVE
+  SUSPENDED
+  EXITED
+  ARCHIVED
+}
+
+enum OrganizationCommitteeStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum OrganizationBranchStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ChamaStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  CLOSED
+  ARCHIVED
+}
+
+enum ChamaType {
+  SAVINGS
+  ROSCA
+  INVESTMENT
+  WELFARE
+  FAMILY
+  STAFF
+  CHURCH
+  HYBRID
+  BUSINESS
+  COMMUNITY
+  YOUTH
+  ASCA
+  NORMAL
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum Visibility {
+  PUBLIC
+  PRIVATE
+  INVITE_ONLY
+}
+
+enum MemberRole {
+  FOUNDER
+  CHAIR
+  TREASURER
+  SECRETARY
+  AUDITOR
+  MEMBER
+}
+
+enum MemberStatus {
+  INVITATION_SENT
+  PENDING_APPROVAL
+  PENDING
+  ACTIVE
+  SUSPENDED
+  EXITED
+  ARCHIVED
+}
+
+enum ContributionStatus {
+  PENDING
+  PAID
+  OVERDUE
+  PARTIAL
+  REVERSED
+}
+
+enum PaymentMethod {
+  MPESA
+  BANK
+  CASH
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVE
+  DEFAULTED
+  PAID
+}
+
+enum GuarantorStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+  RELEASED
+  CLAIMED
+}
+
+enum TransactionType {
+  CONTRIBUTION
+  LOAN_DISBURSEMENT
+  LOAN_PAYMENT
+  PAYOUT
+  PENALTY
+  SHARE_OUT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum DisputeCategory {
+  CONTRIBUTION
+  LOAN
+  PAYOUT
+  GOVERNANCE
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  VOTING
+  RESOLVED
+  CLOSED
+}
+
+enum EvidenceType {
+  DOCUMENT
+  IMAGE
+  SCREENSHOT
+  RECEIPT
+}
+
+enum VoteType {
+  SIMPLE_MAJORITY
+  WEIGHTED_CONTRIBUTION
+  ROLE_RESTRICTED
+}
+
+enum VoteStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CLOSED
+  CANCELLED
+}
+
+enum NotificationType {
+  CONTRIBUTION_DUE
+  MEETING_REMINDER
+  LOAN_OVERDUE
+  DISPUTE_RAISED
+  VOTE_STARTED
+  PAYOUT_READY
+  GENERAL_UPDATE
+}
+
+enum NotificationPriority {
+  CRITICAL
+  IMPORTANT
+  INFO
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum NotificationChannelType {
+  SMS
+  EMAIL
+  PUSH
+  IN_APP
+}
+
+enum NotificationChannelStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum BackgroundJobType {
+  NOTIFICATION_DELIVERY
+  CONTRIBUTION_REMINDER
+  PENALTY_CALCULATION
+  LOAN_INTEREST_CALCULATION
+  PAYOUT_PROCESSING
+  SHARE_OUT_CALCULATION
+  DATA_RECONCILIATION
+  AUDIT_CLEANUP
+  REPORT_GENERATION
+}
+
+enum BackgroundJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PAYMENT_PROCESSED
+  LOAN_APPROVED
+  LOAN_DISBURSED
+  DISPUTE_RAISED
+  VOTE_CAST
+  MEMBER_JOINED
+  MEMBER_SUSPENDED
+  CHAMA_CREATED
+  CONTRIBUTION_MADE
+  PAYOUT_PROCESSED
+}
+
+enum LoanRepaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REVERSED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  APOLOGY
+  LATE
+  EXCUSED
+}
+
+enum WelfareClaimType {
+  EMERGENCY
+  MEDICAL
+  FUNERAL
+  EDUCATION
+  OTHER
+}
+
+enum WelfareClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PARTIALLY_APPROVED
+  PAID
+  CANCELLED
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  CLOSED
+  CANCELLED
+}
+
+
+
+
