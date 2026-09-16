@@ -5,6 +5,9 @@ import { getHealthUrl, normalizeReleaseInfo, type AppUpdateState } from '../conf
 import { ROUTES } from '../config/routes';
 import { Card } from '../design-system';
 import { PublicPageFrame } from '../components/PublicPageFrame';
+import { APP_VERSION } from '../config/appVersion';
+
+const bundledApkUrl = `/downloads/chama360-${APP_VERSION}.apk`;
 
 export const DownloadApp = () => {
   const [release, setRelease] = useState<AppUpdateState | null>(null);
@@ -38,7 +41,7 @@ export const DownloadApp = () => {
             <ShieldCheck className="mt-1 h-6 w-6 shrink-0 text-emerald-700" />
             <div>
               <h2 className="text-xl font-black text-[var(--ds-secondary)]">CHAMA360 for Android</h2>
-              <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Version {release?.latestVersion ?? '—'}{release?.releasedAt ? ` · Released ${new Date(release.releasedAt).toLocaleDateString()}` : ''}</p>
+              <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Version {release?.latestVersion ?? APP_VERSION}{release?.releasedAt ? ` · Released ${new Date(release.releasedAt).toLocaleDateString()}` : ''}</p>
               {release?.releaseNotes ? <p className="mt-3 text-sm text-[var(--ds-text-muted)]">{release.releaseNotes}</p> : null}
             </div>
           </div>
@@ -50,7 +53,7 @@ export const DownloadApp = () => {
             </div>
           ) : null}
 
-          <a href={release?.updateUrl} aria-disabled={!release?.updateUrl} className={`btn mt-5 flex w-full items-center justify-center gap-2 ${!release?.updateUrl ? 'pointer-events-none opacity-50' : ''}`}>
+          <a href={release?.updateUrl ?? bundledApkUrl} className="btn mt-5 flex w-full items-center justify-center gap-2">
             <Download className="h-4 w-4" />
             {release?.apkSizeBytes ? `Download APK (${(release.apkSizeBytes / 1024 / 1024).toFixed(1)} MB)` : 'Download APK'}
           </a>

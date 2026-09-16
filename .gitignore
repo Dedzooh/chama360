@@ -81,6 +81,11 @@ dist
 # Gatsby files
 .cache/
 public
+!client/public/
+client/public/*
+!client/public/downloads/
+client/public/downloads/*
+!client/public/downloads/chama360-1.0.5.apk
 
 # Storybook build outputs
 .out
