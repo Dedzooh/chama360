@@ -162,12 +162,13 @@ export const MyChamas = () => {
   }, [favorites, organizations]);
 
   const primaryOrganizationId = organizations[0]?.id;
+  const managedOrganizationId = organizations.find((organization) => ['FOUNDER', 'OWNER', 'ADMIN'].includes((organization.myRole ?? '').toUpperCase()))?.id;
   const quickActions = [
     { label: 'Record Contribution', to: primaryOrganizationId ? ROUTES.chama.contributions(primaryOrganizationId) : ROUTES.app.createChama, icon: Plus, tone: 'green' },
     { label: 'Apply Loan', to: primaryOrganizationId ? ROUTES.chama.loans(primaryOrganizationId) : ROUTES.app.joinChama, icon: Wallet, tone: 'blue' },
     { label: 'Approve Loans', to: primaryOrganizationId ? ROUTES.chama.loans(primaryOrganizationId) : ROUTES.app.myChamas, icon: CheckCircle, tone: 'purple' },
     { label: 'Welfare Claim', to: primaryOrganizationId ? ROUTES.chama.welfare(primaryOrganizationId) : ROUTES.app.myChamas, icon: Heart, tone: 'pink' },
-    { label: 'Add Member', to: ROUTES.app.joinChama, icon: UserPlus, tone: 'green-soft' },
+    { label: managedOrganizationId ? 'Invite Members' : 'Join Chama', to: managedOrganizationId ? ROUTES.chama.members(managedOrganizationId) : ROUTES.app.joinChama, icon: UserPlus, tone: 'green-soft' },
     { label: 'Schedule Meeting', to: ROUTES.more.meetings, icon: Calendar, tone: 'gold' },
     { label: 'Announcement', to: ROUTES.app.notifications, icon: Megaphone, tone: 'teal' },
     { label: 'Reports', to: ROUTES.more.reports, icon: BarChart3, tone: 'blue-soft' },

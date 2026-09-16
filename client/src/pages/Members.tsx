@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Archive, Mail, RefreshCw, Search, Shield, Trash2, UserCheck, UserPlus, Users } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { ROUTES } from '../config/routes';
 import { useOrganizationWorkspace } from '../context/OrganizationWorkspaceContext';
 import { organizationService, type OrganizationMemberRecord, type OrganizationRoleRecord } from '../services/organizationService';
 import { useCompactLayout } from '../hooks/useCompactLayout';
@@ -11,6 +13,8 @@ const statusOptions = ['INVITATION_SENT', 'PENDING_APPROVAL', 'PENDING', 'ACTIVE
 
 export const Members = () => {
   const compactLayout = useCompactLayout();
+  const location = useLocation();
+  const creationResult = location.state as { createdOrganizationId?: string } | null;
   const { currentOrganization, refreshOrganizations } = useOrganizationWorkspace();
   const [members, setMembers] = useState<OrganizationMemberRecord[]>([]);
   const [roles, setRoles] = useState<OrganizationRoleRecord[]>(roleOptionsFallback);
@@ -18,6 +22,7 @@ export const Members = () => {
   const [saving, setSaving] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<OrganizationMemberRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRoleId, setInviteRoleId] = useState('');
@@ -62,6 +67,7 @@ export const Members = () => {
 
     setSaving(true);
     setError(null);
+    setFeedback('');
     try {
       const selectedRole = roles.find((role) => role.id === inviteRoleId);
       await organizationService.addMember(currentOrganization.id, {
@@ -71,6 +77,7 @@ export const Members = () => {
       });
       setInviteEmail('');
       await loadData();
+      setFeedback('Member added.');
       await refreshOrganizations();
     } catch (inviteError) {
       setError(inviteError instanceof Error ? inviteError.message : 'Failed to add member');
@@ -83,12 +90,15 @@ export const Members = () => {
     if (!currentOrganization?.id) return;
     setSaving(true);
     setError(null);
+    setFeedback('');
     try {
       await organizationService.updateMember(currentOrganization.id, member.id, {
         roleId: nextRoleId || undefined,
         status: nextStatus as any,
       });
       await loadData();
+      await refreshOrganizations();
+      setFeedback(nextStatus === 'ACTIVE' ? 'Member approved and active.' : 'Member updated.');
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Failed to update member');
     } finally {
@@ -117,6 +127,7 @@ export const Members = () => {
 
   const activeCount = members.filter((member) => member.status === 'ACTIVE').length;
   const pendingCount = members.filter((member) => member.status === 'PENDING' || member.status === 'PENDING_APPROVAL' || member.status === 'INVITATION_SENT').length;
+  const approvalRequests = members.filter((member) => member.status === 'PENDING_APPROVAL');
   const suspendedCount = members.filter((member) => member.status === 'SUSPENDED').length;
 
   const mobileLayout = (
@@ -311,7 +322,23 @@ export const Members = () => {
 
   return (
     <div className="space-y-6">
+      {canManageMembers && (creationResult?.createdOrganizationId === currentOrganization.id || activeCount <= 1) ? <section className="section-shell overflow-hidden" aria-labelledby="getting-started-title">
+        <div className="section-header"><p className="text-sm text-[var(--ds-text-muted)]">Getting started</p><h2 id="getting-started-title" className="text-xl font-black text-[var(--ds-secondary)]">Your chama is ready. Here are the next steps.</h2></div>
+        <div className="section-body grid gap-3 sm:grid-cols-3">
+          <p className="rounded-xl bg-[var(--ds-surface-2)] p-4 text-sm"><strong className="block text-[var(--ds-secondary)]">1. Share your free link</strong>Members can review the group and request to join.</p>
+          <p className="rounded-xl bg-[var(--ds-surface-2)] p-4 text-sm"><strong className="block text-[var(--ds-secondary)]">2. Approve requests</strong>Check each person before giving access.</p>
+          <div className="rounded-xl bg-[var(--ds-surface-2)] p-4 text-sm"><strong className="block text-[var(--ds-secondary)]">3. Record a contribution</strong><Link className="mt-2 inline-flex font-semibold text-[var(--ds-primary)] underline" to={ROUTES.chama.contributions(currentOrganization.id)}>Open contributions</Link></div>
+        </div>
+      </section> : null}
       {canManageMembers ? <OrganizationInviteLink organizationId={currentOrganization.id} organizationName={currentOrganization.name} /> : null}
+      {canManageMembers ? <section className="section-shell overflow-hidden" aria-labelledby="join-requests-title">
+        <div className="section-header flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-[var(--ds-text-muted)]">Member access</p><h2 id="join-requests-title" className="text-xl font-black text-[var(--ds-secondary)]">Join requests ({approvalRequests.length})</h2></div><Button variant="outline" onClick={() => void loadData()} startIcon={<RefreshCw className="h-4 w-4" />}>Refresh</Button></div>
+        <div className="section-body space-y-3">
+          {loading ? <p className="text-sm text-[var(--ds-text-muted)]">Checking for requests…</p> : approvalRequests.length ? approvalRequests.map((member) => <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--ds-border)] p-4"><div><strong className="text-[var(--ds-secondary)]">{`${member.user?.firstName ?? ''} ${member.user?.lastName ?? ''}`.trim() || member.user?.email || 'New member'}</strong><p className="text-sm text-[var(--ds-text-muted)]">{member.user?.email ?? 'Requested to join'}</p></div><Button disabled={saving} onClick={() => void updateMember(member, '', 'ACTIVE')} startIcon={<UserCheck className="h-4 w-4" />}>Approve</Button></div>) : <p className="text-sm text-[var(--ds-text-muted)]">No requests yet. Share the link above, then return here to approve members.</p>}
+          {feedback ? <p role="status" className="text-sm text-emerald-700">{feedback}</p> : null}
+          {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
+        </div>
+      </section> : null}
       {compactLayout ? mobileLayout : <div className="space-y-6 chama360-workspace-page">
       <section className="chama360-module-hero chama360-module-hero-members">
         <div className="chama360-module-hero-main">
