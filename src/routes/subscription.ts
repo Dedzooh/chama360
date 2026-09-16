@@ -45,6 +45,7 @@ router.get('/billing-organizations', authenticate, asyncHandler(async (req: Requ
           name: true,
           slug: true,
           status: true,
+          _count: { select: { members: { where: { status: 'ACTIVE' } } } },
           subscription: { select: { plan: true, status: true, currentPeriodEnd: true } },
         },
       },
@@ -55,6 +56,8 @@ router.get('/billing-organizations', authenticate, asyncHandler(async (req: Requ
   res.json({
     organizations: memberships.map((membership) => ({
       ...membership.organization,
+      memberCount: membership.organization._count.members,
+      _count: undefined,
       role: membership.role?.name ?? null,
       roleLabel: membership.role?.label ?? null,
       subscription: membership.organization.subscription ?? { plan: 'FREE', status: 'ACTIVE', currentPeriodEnd: null },
@@ -183,7 +186,12 @@ router.get('/me', authenticate, asyncHandler(async (req: Request, res: Response)
 router.post('/request-upgrade', authenticate, asyncHandler(async (req: Request, res: Response) => {
   const input = z.object({ plan: z.enum(['STARTER', 'GROWTH', 'PRO', 'INVESTMENT_AUTOMATION', 'ENTERPRISE']), billingCycle: z.enum(['MONTHLY', 'ANNUAL']).default('MONTHLY'), organizationId: organizationIdSchema, phone: z.string().trim().optional() }).parse(req.body);
   await requireOrganizationBillingAccess(input.organizationId, req.user!.id, true);
-  const price = getPlanPrice(input.plan, input.billingCycle);
+  const memberCount = await prisma.organizationMember.count({ where: { organizationId: input.organizationId, status: 'ACTIVE' } });
+  const memberLimit = subscriptionPlans[input.plan].memberLimit;
+  if (memberLimit !== null && memberCount > memberLimit) {
+    throw new BadRequestError(`${subscriptionPlans[input.plan].name} supports up to ${memberLimit} active members. Choose a plan that fits this chama.`);
+  }
+  const price = getPlanPrice(input.plan, input.billingCycle, memberCount);
   if (!price) throw new BadRequestError('Invalid paid plan');
   const processing = await prisma.planChangeRequest.findFirst({ where: { organizationId: input.organizationId, status: 'PROCESSING' } });
   if (processing) throw new BadRequestError('An M-Pesa payment is already awaiting confirmation. Complete or cancel it before starting another upgrade.');

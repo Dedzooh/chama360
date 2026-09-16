@@ -12,6 +12,7 @@ export interface SubscriptionRecord {
 
 export interface UpgradeRequest {
   id: string;
+  amount: string;
   requestedPlan: SubscriptionPlan;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
   failureReason?: string | null;
@@ -20,6 +21,7 @@ export interface UpgradeRequest {
 
 export interface BillingOrganization {
   id: string;
+  memberCount: number;
   name: string;
   slug: string;
   status: string;

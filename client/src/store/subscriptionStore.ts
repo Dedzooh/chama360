@@ -12,6 +12,7 @@ interface SubscriptionState {
   promptFeature: PremiumFeature | null;
   pendingPlan: SubscriptionPlan | null;
   pendingRequestId: string | null;
+  pendingAmount: number | null;
   paymentStatus: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
@@ -40,6 +41,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
   promptFeature: null,
   pendingPlan: null,
   pendingRequestId: null,
+  pendingAmount: null,
   paymentStatus: null,
   currentPeriodEnd: null,
   cancelAtPeriodEnd: false,
@@ -53,7 +55,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
   setBillingCycle: (billingCycle) => set({ billingCycle }),
   setOrganization: async (organizationId) => {
     if (get().organizationId === organizationId) return;
-    set({ organizationId, pendingPlan: null, pendingRequestId: null, paymentStatus: null });
+    set({ organizationId, pendingPlan: null, pendingRequestId: null, pendingAmount: null, paymentStatus: null });
     await get().refresh();
   },
   refresh: async () => {
@@ -61,7 +63,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
     try {
       const data = await subscriptionService.getCurrent(get().organizationId);
       const latestPending = data.requests.find((request) => ['PENDING', 'PROCESSING'].includes(request.status));
-      set({ plan: data.subscription.plan, status: data.subscription.status === 'EXPIRED' ? 'CANCELLED' : data.subscription.status, currentPeriodEnd: data.subscription.currentPeriodEnd ?? null, cancelAtPeriodEnd: data.subscription.cancelAtPeriodEnd, daysRemaining: data.renewal.daysRemaining, inGracePeriod: data.renewal.inGracePeriod, pendingPlan: latestPending?.requestedPlan ?? null, pendingRequestId: latestPending?.id ?? null, paymentStatus: latestPending?.status ?? null, message: '' });
+      set({ plan: data.subscription.plan, status: data.subscription.status === 'EXPIRED' ? 'CANCELLED' : data.subscription.status, currentPeriodEnd: data.subscription.currentPeriodEnd ?? null, cancelAtPeriodEnd: data.subscription.cancelAtPeriodEnd, daysRemaining: data.renewal.daysRemaining, inGracePeriod: data.renewal.inGracePeriod, pendingPlan: latestPending?.requestedPlan ?? null, pendingRequestId: latestPending?.id ?? null, pendingAmount: latestPending ? Number(latestPending.amount) : null, paymentStatus: latestPending?.status ?? null, message: '' });
     } catch {
       set({ message: 'Unable to refresh subscription status.' });
     } finally {
@@ -75,7 +77,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
       const organizationId = get().organizationId;
       if (!organizationId) throw new Error('Select a chama before choosing a plan.');
       const data = await subscriptionService.requestUpgrade(plan, organizationId, get().billingCycle);
-      set({ pendingPlan: plan, pendingRequestId: data.request.id, paymentStatus: data.request.status, promptFeature: null, message: data.message });
+      set({ pendingPlan: plan, pendingRequestId: data.request.id, pendingAmount: Number(data.request.amount), paymentStatus: data.request.status, promptFeature: null, message: data.message });
     } catch (error: any) {
       set({ message: error?.response?.data?.error?.message || 'Unable to create the upgrade request. Please try again.' });
     } finally {
@@ -100,7 +102,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
       const { request } = await subscriptionService.getRequest(requestId);
       if (request.status === 'COMPLETED') {
         await get().refresh();
-        set({ pendingPlan: null, pendingRequestId: null, paymentStatus: 'COMPLETED', message: `Payment confirmed. Your ${request.requestedPlan} plan is now active.` });
+        set({ pendingPlan: null, pendingRequestId: null, pendingAmount: null, paymentStatus: 'COMPLETED', message: `Payment confirmed. Your ${request.requestedPlan} plan is now active.` });
       } else if (request.status === 'FAILED') {
         set({ paymentStatus: 'FAILED', message: request.failureReason || 'The M-Pesa payment was not completed.' });
       } else set({ paymentStatus: request.status });
