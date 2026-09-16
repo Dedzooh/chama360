@@ -12,12 +12,13 @@ import { allocatePaidContribution, removeContributionAllocation } from '../servi
 
 const router = Router();
 const db: any = prisma;
+const inviteTokenSchema = z.string().uuid();
 const runFinancialTransaction = <T>(operation: (tx: any) => Promise<T>): Promise<T> =>
   db.$transaction(operation, { isolationLevel: 'Serializable', maxWait: 5000, timeout: 15000 });
 
 async function requireMemberCapacity(organizationId: string) {
   const subscription = await subscriptionLifecycleService.reconcileOrganization(organizationId);
-  if (!['ACTIVE', 'PAST_DUE'].includes(subscription.status)) throw new ForbiddenError('This chama trial or subscription has expired. Upgrade the chama plan to add more members.');
+  if (!['ACTIVE', 'PAST_DUE'].includes(subscription.status)) throw new ForbiddenError('This chama subscription is inactive. Ask an administrator to review its plan.');
   const limit = subscriptionPlans[subscription.plan].memberLimit;
   if (limit === null) return;
   const activeMembers = await prisma.organizationMember.count({ where: { organizationId, status: 'ACTIVE' } });
@@ -329,6 +330,46 @@ async function writeOrganizationAudit(params: {
   });
 }
 
+router.get('/invites/:token', asyncHandler(async (req: Request, res: Response) => {
+  const token = inviteTokenSchema.parse(req.params.token);
+  const organization = await db.organization.findUnique({
+    where: { inviteToken: token },
+    select: { id: true, name: true, description: true, organizationType: true, status: true },
+  });
+  if (!organization || ['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes(organization.status)) {
+    throw new NotFoundError('Invitation link is unavailable');
+  }
+  res.json({ organization });
+}));
+
+router.post('/invites/:token/join', authenticate, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
+  const token = inviteTokenSchema.parse(req.params.token);
+  const userId = req.user?.id;
+  if (!userId) throw new BadRequestError('User not authenticated');
+  const organization = await db.organization.findUnique({ where: { inviteToken: token }, select: { id: true, status: true } });
+  if (!organization || ['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes(organization.status)) {
+    throw new NotFoundError('Invitation link is unavailable');
+  }
+  const existing = await db.organizationMember.findUnique({
+    where: { organizationId_userId: { organizationId: organization.id, userId } },
+  });
+  if (existing) {
+    if (existing.status === 'SUSPENDED') throw new ForbiddenError('This membership is suspended');
+    if (existing.status === 'EXITED' || existing.status === 'ARCHIVED') {
+      const membership = await db.organizationMember.update({ where: { id: existing.id }, data: { status: 'PENDING_APPROVAL' } });
+      return res.json({ membership });
+    }
+    return res.json({ membership: existing });
+  }
+  const role = await db.organizationRole.findFirst({ where: { organizationId: organization.id, name: 'MEMBER' } });
+  if (!role) throw new NotFoundError('Member role is unavailable');
+  const membership = await db.organizationMember.create({
+    data: { organizationId: organization.id, userId, roleId: role.id, status: 'PENDING_APPROVAL' },
+  });
+  await writeOrganizationAudit({ organizationId: organization.id, userId, action: 'CREATE', entityType: 'OrganizationMember', entityId: membership.id, metadata: { source: 'invite_link' } });
+  return res.status(201).json({ membership });
+}));
+
 router.post(
   '/',
   authenticate,
@@ -352,6 +393,7 @@ router.post(
           description: payload.description,
           metadata: payload.metadata,
           createdById: req.user!.id as string,
+          inviteToken: randomUUID(),
         },
       });
 
@@ -502,6 +544,35 @@ router.get(
   })
 );
 
+router.get('/:id/invite-link', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const access = await getOrganizationAccess(id, req.user!.id as string);
+  if (!isOwnerLike(access.role?.name ?? '') && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
+    throw new ForbiddenError('Insufficient permissions to invite members');
+  }
+  await db.organization.updateMany({ where: { id, inviteToken: null }, data: { inviteToken: randomUUID() } });
+  const organization = await db.organization.findUnique({ where: { id }, select: { inviteToken: true, status: true } });
+  if (!organization || ['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes(organization.status)) {
+    throw new ForbiddenError('This organization is not accepting invitations');
+  }
+  res.json({ token: organization.inviteToken });
+}));
+
+router.post('/:id/invite-link/rotate', authenticate, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const access = await getOrganizationAccess(id, req.user!.id as string);
+  if (!isOwnerLike(access.role?.name ?? '') && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
+    throw new ForbiddenError('Insufficient permissions to invite members');
+  }
+  if (['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes(access.organization.status)) {
+    throw new ForbiddenError('This organization is not accepting invitations');
+  }
+  const token = randomUUID();
+  await db.organization.update({ where: { id }, data: { inviteToken: token } });
+  await writeOrganizationAudit({ organizationId: id, userId: req.user!.id as string, action: 'UPDATE', entityType: 'OrganizationInviteLink', entityId: id, metadata: { rotated: true } });
+  res.json({ token });
+}));
+
 router.get(
   '/:id',
   authenticate,
@@ -529,7 +600,7 @@ router.get(
 
     const roleName = access.role?.name ?? 'MEMBER';
     const canViewContacts = isOwnerLike(roleName) || ['TREASURER', 'SECRETARY'].includes(roleName) || hasOrganizationPermission(access, 'VIEW_MEMBER_CONTACTS');
-    const safeOrganization = organizationRecord ? { ...organizationRecord, members: organizationRecord.members.map((member: any) => ({ ...member, user: canViewContacts || member.userId === req.user!.id ? member.user : { ...member.user, email: null, phone: null } })) } : organizationRecord;
+    const safeOrganization = organizationRecord ? { ...organizationRecord, inviteToken: undefined, members: organizationRecord.members.map((member: any) => ({ ...member, user: canViewContacts || member.userId === req.user!.id ? member.user : { ...member.user, email: null, phone: null } })) } : organizationRecord;
     res.json({ organization: safeOrganization, myRole: roleName, myRoleLabel: access.role?.label ?? 'Member' });
   })
 );

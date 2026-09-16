@@ -21,6 +21,7 @@ const MyChamas = page(() => import('./pages/MyChamas'), 'MyChamas');
 const DesignSystem = page(() => import('./pages/DesignSystem'), 'DesignSystem');
 const JoinChama = page(() => import('./pages/JoinChama'), 'JoinChama');
 const JoinInvite = page(() => import('./pages/JoinInvite'), 'JoinInvite');
+const JoinOrganizationInvite = page(() => import('./pages/JoinOrganizationInvite'), 'JoinOrganizationInvite');
 const Notifications = page(() => import('./pages/Notifications'), 'Notifications');
 const Profile = page(() => import('./pages/Profile'), 'Profile');
 const Dashboard = page(() => import('./pages/Dashboard'), 'Dashboard');
@@ -80,6 +81,7 @@ function App() {
           <Route path={ROUTES.legal.centre} element={<Legal />} />
           <Route path={ROUTES.legal.download} element={<DownloadApp />} />
           <Route path="/join/:shareableLink" element={<JoinInvite />} />
+          <Route path="/org-invite/:token" element={<JoinOrganizationInvite />} />
           <Route element={<PublicOnly />}>
             <Route path={ROUTES.auth.splash} element={<Splash />} />
             <Route path={ROUTES.auth.login} element={<Login />} />

@@ -13,11 +13,11 @@ describe('subscription release safety', () => {
   });
   it('downgrades after the grace period', () => {
     const result = getLifecycleTransition({ ...base, status: 'PAST_DUE', gracePeriodEnd: new Date('2026-07-13T11:59:00.000Z') }, now);
-    expect(result).toMatchObject({ plan: 'FREE', status: 'EXPIRED' });
+    expect(result).toMatchObject({ plan: 'FREE', status: 'ACTIVE' });
   });
   it('honours cancellation only after the paid-through date', () => {
     expect(getLifecycleTransition({ ...base, currentPeriodEnd: new Date('2026-07-14T12:00:00.000Z'), cancelAtPeriodEnd: true }, now)).toBeNull();
-    expect(getLifecycleTransition({ ...base, cancelAtPeriodEnd: true }, now)).toMatchObject({ plan: 'FREE', status: 'CANCELLED' });
+    expect(getLifecycleTransition({ ...base, cancelAtPeriodEnd: true }, now)).toMatchObject({ plan: 'FREE', status: 'ACTIVE' });
   });
   it('enforces the feature matrix', () => {
     expect(planHasFeature('FREE', 'VOTING')).toBe(false);

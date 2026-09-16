@@ -61,7 +61,7 @@ export const ReviewSetupStep = () => {
       try { await refreshOrganizations(); } catch { /* The organization is already saved; My Chamas will retry loading it. */ }
       await useSubscriptionStore.getState().setOrganization(organization.id);
       resetDraft();
-      navigate(ROUTES.app.myChamas, { replace: true, state: { createdOrganizationId: organization.id, createdOrganizationName: organization.name, requiredPlan } });
+      navigate(ROUTES.chama.members(organization.id), { replace: true, state: { createdOrganizationId: organization.id, createdOrganizationName: organization.name, requiredPlan } });
     } catch (createError) {
       setError(getApiErrorMessage(createError, 'Unable to create this Chama. Check the details and try again.'));
     } finally {
@@ -104,7 +104,7 @@ export const ReviewSetupStep = () => {
         <Card className={`p-5 md:col-span-2 ${requiredPlan === 'FREE' ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--ds-text-muted)]">Plan requirement</p>
           <h3 className="mt-2 text-xl font-black text-[var(--ds-secondary)]">{requiredPlan === 'FREE' ? 'Core plan compatible' : `${requiredPlan} plan required`}</h3>
-          <p className="mt-2 text-sm leading-6 text-[var(--ds-text-muted)]">{requiredPlan === 'FREE' ? 'The selected modules use core features. Normal member and trial limits still apply.' : `The Chama will be saved first. ${requiredPlan} features remain locked until an administrator completes the organization subscription.`}</p>
+          <p className="mt-2 text-sm leading-6 text-[var(--ds-text-muted)]">{requiredPlan === 'FREE' ? 'The selected modules use core features. Community stays free, with a limit of 30 active members.' : `The Chama will be saved first. ${requiredPlan} features remain locked until an administrator completes the organization subscription.`}</p>
         </Card>
       </div>
 

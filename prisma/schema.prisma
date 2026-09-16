@@ -270,6 +270,7 @@ model RefreshToken {
 
 model Organization {
   id             String   @id @default(cuid())
+  inviteToken    String?  @unique
   name           String
   organizationType String
   chamaType      String?

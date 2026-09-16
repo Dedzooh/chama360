@@ -213,6 +213,22 @@ const normalizeOrganization = (organization: any): OrganizationDetail => ({
 });
 
 export const organizationService = {
+  getInvitePreview: async (token: string): Promise<{ id: string; name: string; description?: string | null; organizationType: string }> => {
+    const response = await api.get(`/organizations/invites/${encodeURIComponent(token)}`);
+    return response.data.organization;
+  },
+  joinByInvite: async (token: string): Promise<{ status: string }> => {
+    const response = await api.post(`/organizations/invites/${encodeURIComponent(token)}/join`);
+    return response.data.membership;
+  },
+  getInviteToken: async (id: string): Promise<string> => {
+    const response = await api.get(`/organizations/${id}/invite-link`);
+    return response.data.token;
+  },
+  rotateInviteToken: async (id: string): Promise<string> => {
+    const response = await api.post(`/organizations/${id}/invite-link/rotate`);
+    return response.data.token;
+  },
   listMyOrganizations: async (): Promise<OrganizationSummary[]> => {
     const response = await api.get('/organizations/my', { params: { _: Date.now() } });
     const organizations = response.data.organizations ?? [];

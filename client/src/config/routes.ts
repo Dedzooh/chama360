@@ -19,6 +19,7 @@ export const ROUTES = {
   },
   invitations: {
     join: (shareableLink: string) => `/join/${shareableLink}`,
+    organization: (token: string) => `/org-invite/${token}`,
   },
   createChama: {
     type: "/create-chama/type",

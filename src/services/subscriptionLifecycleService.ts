@@ -8,9 +8,9 @@ const GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 export type LifecycleInput = { plan: SubscriptionPlan; status: SubscriptionStatus; currentPeriodEnd: Date | null; gracePeriodEnd: Date | null; cancelAtPeriodEnd: boolean };
 export const getLifecycleTransition = (subscription: LifecycleInput, now = new Date()) => {
   if (subscription.plan === 'FREE' || !subscription.currentPeriodEnd || subscription.currentPeriodEnd > now) return null;
-  if (subscription.cancelAtPeriodEnd) return { plan: 'FREE' as const, status: 'CANCELLED' as const, gracePeriodEnd: null, cancelAtPeriodEnd: false };
+  if (subscription.cancelAtPeriodEnd) return { plan: 'FREE' as const, status: 'ACTIVE' as const, gracePeriodEnd: null, cancelAtPeriodEnd: false };
   if (subscription.status === 'ACTIVE') return { status: 'PAST_DUE' as const, gracePeriodEnd: new Date(subscription.currentPeriodEnd.getTime() + GRACE_PERIOD_MS) };
-  if (subscription.status === 'PAST_DUE' && subscription.gracePeriodEnd && subscription.gracePeriodEnd <= now) return { plan: 'FREE' as const, status: 'EXPIRED' as const, gracePeriodEnd: null, cancelAtPeriodEnd: false };
+  if (subscription.status === 'PAST_DUE' && subscription.gracePeriodEnd && subscription.gracePeriodEnd <= now) return { plan: 'FREE' as const, status: 'ACTIVE' as const, gracePeriodEnd: null, cancelAtPeriodEnd: false };
   return null;
 };
 
@@ -26,10 +26,10 @@ export const subscriptionLifecycleService = {
     const existing = await prisma.organizationSubscription.findUnique({ where: { organizationId } });
     const now = new Date();
     const subscription = existing ?? await prisma.organizationSubscription.create({
-      data: { organizationId, trialEndsAt: new Date(now.getTime() + 30 * 86400000) },
+      data: { organizationId },
     });
-    if (subscription.plan === 'FREE' && subscription.trialEndsAt && subscription.trialEndsAt <= now && subscription.status === 'ACTIVE') {
-      return prisma.organizationSubscription.update({ where: { id: subscription.id }, data: { status: 'EXPIRED' } });
+    if (subscription.plan === 'FREE' && (subscription.trialEndsAt || subscription.status === 'EXPIRED' || subscription.status === 'CANCELLED')) {
+      return prisma.organizationSubscription.update({ where: { id: subscription.id }, data: { trialEndsAt: null, status: 'ACTIVE' } });
     }
     const transition = getLifecycleTransition(subscription, now);
     return transition ? prisma.organizationSubscription.update({ where: { id: subscription.id }, data: transition }) : subscription;

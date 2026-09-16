@@ -4,6 +4,7 @@ import { useOrganizationWorkspace } from '../context/OrganizationWorkspaceContex
 import { organizationService, type OrganizationMemberRecord, type OrganizationRoleRecord } from '../services/organizationService';
 import { useCompactLayout } from '../hooks/useCompactLayout';
 import { Badge, Button, Card, Chip, ConfirmDialog, EmptyState, MemberCard, SearchBar, StatCard, TextField } from '../design-system';
+import { OrganizationInviteLink } from '../components/OrganizationInviteLink';
 
 const roleOptionsFallback: OrganizationRoleRecord[] = [];
 const statusOptions = ['INVITATION_SENT', 'PENDING_APPROVAL', 'PENDING', 'ACTIVE', 'SUSPENDED', 'EXITED', 'ARCHIVED'] as const;
@@ -310,6 +311,7 @@ export const Members = () => {
 
   return (
     <div className="space-y-6">
+      {canManageMembers ? <OrganizationInviteLink organizationId={currentOrganization.id} organizationName={currentOrganization.name} /> : null}
       {compactLayout ? mobileLayout : <div className="space-y-6 chama360-workspace-page">
       <section className="chama360-module-hero chama360-module-hero-members">
         <div className="chama360-module-hero-main">
