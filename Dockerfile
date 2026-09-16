@@ -1,5 +1,6 @@
 # Multi-stage build for production
 FROM node:22-alpine AS base
+RUN apk add --no-cache openssl
 
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
@@ -21,8 +22,9 @@ RUN npx prisma generate
 # Build the application
 RUN npm run build
 
-# Remove build-only packages after Prisma generation and compilation.
-RUN npm prune --omit=dev && npm cache clean --force
+# Keep the Prisma CLI in the image so production migrations can run before the
+# application starts. This can be split into a dedicated migration image later.
+RUN npm cache clean --force
 
 # Production image, copy only runtime files.
 FROM base AS runner
@@ -34,14 +36,14 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nodejs
 
 # Copy built application
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/prisma ./prisma
+COPY --chown=nodejs:nodejs --from=builder /app/dist ./dist
+COPY --chown=nodejs:nodejs --from=builder /app/node_modules ./node_modules
+COPY --chown=nodejs:nodejs --from=builder /app/package.json ./package.json
+COPY --chown=nodejs:nodejs --from=builder /app/prisma ./prisma
 
 # Create directories for logs and uploads
 RUN mkdir -p logs uploads
-RUN chown -R nodejs:nodejs /app
+RUN chown nodejs:nodejs logs uploads
 
 USER nodejs
 
