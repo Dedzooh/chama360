@@ -5,6 +5,7 @@ import { useOrganizationWorkspace } from '../context/OrganizationWorkspaceContex
 import { useCompactLayout } from '../hooks/useCompactLayout';
 import { organizationService, type ContributionRecord, type InvestmentAsset, type InvestmentPosition, type InvestmentSummary, type OrganizationAuditLogRecord, type OrganizationMemberRecord, type WelfareClaimRecord } from '../services/organizationService';
 import type { Loan, MeetingRecord, VoteRecord } from '../types';
+import { buildMonthlyStatement } from '../utils/monthlyStatement';
 import { Badge, Button, Card, Chip, EmptyState, MetricCard, SparklineChart, ChartCard, WalletCard } from '../design-system';
 
 const money = (value: number | string | null | undefined) => `KES ${Number(value ?? 0).toLocaleString()}`;
@@ -26,12 +27,16 @@ export const Reports = () => {
   const [investmentSummary, setInvestmentSummary] = useState<InvestmentSummary | null>(null);
   const [memberStatusFilter, setMemberStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PENDING' | 'INACTIVE'>('ALL');
   const [contributionFilter, setContributionFilter] = useState('ALL');
+  const [statementMonth, setStatementMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [loanFilter, setLoanFilter] = useState('ALL');
   const [welfareFilter, setWelfareFilter] = useState('ALL');
   const [meetingFilter, setMeetingFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | 'statement' | null>(null);
   const [exportMessage, setExportMessage] = useState('');
   const canUsePremium = useSubscriptionStore((state) => state.canUse);
   const showUpgrade = useSubscriptionStore((state) => state.showUpgrade);
@@ -117,6 +122,39 @@ export const Reports = () => {
     welfareRequested: filteredClaims.reduce((sum, item) => sum + Number(item.amountRequested ?? 0), 0),
     welfareApproved: filteredClaims.reduce((sum, item) => sum + Number(item.amountApproved ?? 0), 0),
   }), [filteredClaims, filteredContributions, filteredLoans]);
+
+  const monthlyStatement = useMemo(() => buildMonthlyStatement(contributions, statementMonth), [contributions, statementMonth]);
+
+  const exportMonthlyStatement = async () => {
+    if (!currentOrganization) return;
+    setExporting('statement');
+    setExportMessage('');
+    try {
+      const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+      doc.text(`${currentOrganization.name} — Monthly Contribution Statement`, 14, 18);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+      doc.text(`Due month: ${statementMonth}   Generated: ${new Date().toLocaleDateString('en-KE')}`, 14, 27);
+      doc.text(`Paid: ${monthlyStatement.paid}   Due: ${monthlyStatement.due}   Overdue: ${monthlyStatement.overdue}   Partial: ${monthlyStatement.partial}`, 14, 35);
+      doc.text(`Scheduled: ${money(monthlyStatement.scheduledAmount)}   Confirmed paid: ${money(monthlyStatement.paidAmount)}`, 14, 42);
+      autoTable(doc, {
+        startY: 50,
+        head: [['Member', 'Type', 'Due date', 'Scheduled amount', 'Status', 'Paid date', 'Reference']],
+        body: monthlyStatement.rows.map(({ contribution, status }) => [
+          `${contribution.member?.firstName ?? ''} ${contribution.member?.lastName ?? ''}`.trim() || 'Unknown member',
+          contribution.contributionType ?? 'Contribution', dateText(contribution.dueDate), money(contribution.amount),
+          status, dateText(contribution.paidAt ?? contribution.paidDate), contribution.reference ?? '—',
+        ]),
+        headStyles: { fillColor: [9, 111, 81] },
+        styles: { fontSize: 9 },
+      });
+      doc.save(`${safeName(currentOrganization.name)}-statement-${statementMonth}.pdf`);
+      setExportMessage('Monthly statement downloaded. Confirm any partial payments and late entries before sharing it.');
+    } catch (exportError) {
+      setExportMessage(exportError instanceof Error ? `Statement failed: ${exportError.message}` : 'Statement failed. Please try again.');
+    } finally { setExporting(null); }
+  };
 
   const reportFileBase = `${safeName(currentOrganization?.name ?? 'chama')}-management-report-${new Date().toISOString().slice(0, 10)}`;
 
@@ -446,6 +484,27 @@ export const Reports = () => {
 
   return (
     <div className="space-y-6">
+      <section className="section-shell overflow-hidden">
+        <div className="section-header">
+          <p className="text-sm text-[var(--ds-text-muted)]">Monthly meeting paperwork · Starter</p>
+          <h2 className="text-xl font-black text-[var(--ds-secondary)]">Contribution statement</h2>
+          <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Review contributions due in a month, then download a shareable PDF for your meeting.</p>
+        </div>
+        <div className="section-body space-y-4">
+          <label className="block max-w-xs text-sm font-semibold text-[var(--ds-secondary)]">Due month
+            <input className="input mt-2 w-full" type="month" value={statementMonth} onChange={(event) => setStatementMonth(event.target.value)} />
+          </label>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {([['Paid', monthlyStatement.paid], ['Due', monthlyStatement.due], ['Overdue', monthlyStatement.overdue], ['Partial', monthlyStatement.partial]] as const).map(([label, value]) =>
+              <div key={label} className="rounded-xl border border-[var(--ds-border)] bg-[var(--ds-surface-2)] p-3"><p className="text-xs text-[var(--ds-text-muted)]">{label}</p><strong className="text-xl text-[var(--ds-secondary)]">{loading ? '…' : value}</strong></div>)}
+          </div>
+          <p className="text-sm text-[var(--ds-text-muted)]">{monthlyStatement.rows.length} scheduled records · {money(monthlyStatement.paidAmount)} confirmed paid of {money(monthlyStatement.scheduledAmount)} scheduled. Partial amounts need review in the contribution ledger.</p>
+          <Button disabled={loading || exporting !== null || !statementMonth} onClick={() => runPremiumExport(() => void exportMonthlyStatement())} startIcon={<FileDown className="h-4 w-4" />}>
+            {exporting === 'statement' ? 'Preparing statement…' : 'Download monthly statement PDF'}
+          </Button>
+          {exportMessage ? <p className="text-sm" role="status">{exportMessage}</p> : null}
+        </div>
+      </section>
       {compactLayout ? mobileLayout : <div className="space-y-6 chama360-workspace-page">
       <section className="chama360-module-hero chama360-module-hero-reports">
         <div className="chama360-module-hero-main">
