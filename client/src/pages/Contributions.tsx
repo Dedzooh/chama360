@@ -413,17 +413,17 @@ export const Contributions = () => {
       <section className="chama360-module-hero chama360-module-hero-contributions">
         <div className="chama360-module-hero-main">
           <div className="chama360-module-hero-topline">
-            <span>Finance workflow</span>
+            <span>{canRecord ? 'Finance workflow' : 'My contribution records'}</span>
             <strong>{currentOrganization.name}</strong>
           </div>
           <div className="chama360-module-hero-copy">
             <h1>Contributions</h1>
-            <p>Track member payments, record receipts, and keep the chama ledger ready for review.</p>
+            <p>{canRecord ? 'Track member payments, record receipts, and keep the chama ledger ready for review.' : 'See your paid and open contributions, download your statement, and check how to pay.'}</p>
           </div>
           <div className="chama360-module-hero-actions">
             <a href="#contribution-ledger-mobile">
               <ClipboardList className="h-4 w-4" />
-              Ledger
+              {canRecord ? 'Ledger' : 'My records'}
             </a>
             {canRecord ? <a href="#record-contribution-mobile"><Plus className="h-4 w-4" />Record</a> : null}
             <button type="button" onClick={() => void loadData()}>
@@ -437,13 +437,13 @@ export const Contributions = () => {
             <span className="green"><Wallet className="h-5 w-5" /></span>
             <p>Total</p>
             <strong>{loading ? '...' : total}</strong>
-            <small>Ledger records</small>
+            <small>{canRecord ? 'Group ledger records' : 'Your records'}</small>
           </article>
           <article>
             <span className="blue"><CheckCircle2 className="h-5 w-5" /></span>
             <p>Paid</p>
             <strong>{loading ? '...' : paid}</strong>
-            <small>Completed receipts</small>
+            <small>{canRecord ? 'Completed receipts' : 'Your paid records'}</small>
           </article>
           <article>
             <span className="gold"><Banknote className="h-5 w-5" /></span>
@@ -501,7 +501,7 @@ export const Contributions = () => {
             <div className="h-20 animate-pulse rounded-[18px] bg-[var(--ds-surface-2)]" />
           </>
         ) : filteredContributions.length === 0 ? (
-          <EmptyState title="No contribution records yet." description="Once a member pays, receipts and ledger history will appear here." />
+          <EmptyState title="No contribution records yet." description={canRecord ? 'Record a contribution to start the ledger.' : 'Your group treasurer will add contribution records here.'} />
         ) : (
           filteredContributions.map((contribution) => {
             const canReverse = canRecord && contribution.status !== 'REVERSED';
@@ -587,17 +587,17 @@ export const Contributions = () => {
       <section className="chama360-module-hero chama360-module-hero-contributions">
         <div className="chama360-module-hero-main">
           <div className="chama360-module-hero-topline">
-            <span>Finance workflow</span>
+            <span>{canRecord ? 'Finance workflow' : 'My contribution records'}</span>
             <strong>{currentOrganization.name}</strong>
           </div>
           <div className="chama360-module-hero-copy">
             <h1>Contributions</h1>
-            <p>Track payments, record receipts, and review the contribution ledger with clear finance controls.</p>
+            <p>{canRecord ? 'Track payments, record receipts, and review the contribution ledger with clear finance controls.' : 'See your paid and open contributions, download your statement, and check how to pay.'}</p>
           </div>
           <div className="chama360-module-hero-actions">
             <a href="#contribution-ledger">
               <ClipboardList className="h-4 w-4" />
-              Ledger
+              {canRecord ? 'Ledger' : 'My records'}
             </a>
             {canRecord ? <a href="#record-contribution"><Plus className="h-4 w-4" />Record</a> : null}
             <button type="button" onClick={() => void loadData()}>
@@ -611,13 +611,13 @@ export const Contributions = () => {
             <span className="green"><Wallet className="h-5 w-5" /></span>
             <p>Total</p>
             <strong>{loading ? '...' : total}</strong>
-            <small>Ledger records</small>
+            <small>{canRecord ? 'Group ledger records' : 'Your records'}</small>
           </article>
           <article>
             <span className="blue"><CheckCircle2 className="h-5 w-5" /></span>
             <p>Paid</p>
             <strong>{loading ? '...' : paid}</strong>
-            <small>Completed receipts</small>
+            <small>{canRecord ? 'Completed receipts' : 'Your paid records'}</small>
           </article>
           <article>
             <span className="gold"><Banknote className="h-5 w-5" /></span>
@@ -646,7 +646,7 @@ export const Contributions = () => {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-[var(--ds-text-muted)]">Ledger</p>
-              <h2 className="text-xl font-black text-[var(--ds-secondary)]">Contribution records</h2>
+              <h2 className="text-xl font-black text-[var(--ds-secondary)]">{canRecord ? 'Contribution records' : 'My contribution records'}</h2>
             </div>
             <Button variant="outline" onClick={() => void loadData()} startIcon={<RefreshCw className="h-4 w-4" />}>
               Refresh

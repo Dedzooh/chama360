@@ -69,10 +69,12 @@ export const Dashboard = () => {
   const { organizationId } = useParams();
   const { organizations, currentOrganization, loading, error } = useOrganizationWorkspace();
   const userFirstName = useAuthStore((state) => state.user?.firstName ?? 'there');
+  const userId = useAuthStore((state) => state.user?.id);
   const [recentActivity, setRecentActivity] = useState<Array<{ title: string; detail: string; time: string }>>([]);
   const [upcomingMeeting, setUpcomingMeeting] = useState<string | null>(null);
   const [upcomingMeetingRecord, setUpcomingMeetingRecord] = useState<MeetingRecord | null>(null);
   const [contributions, setContributions] = useState<ContributionRecord[]>([]);
+  const [myRecordsAvailable, setMyRecordsAvailable] = useState(false);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [claims, setClaims] = useState<WelfareClaimRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
@@ -97,17 +99,20 @@ export const Dashboard = () => {
         setUpcomingMeeting(null);
         setUpcomingMeetingRecord(null);
         setContributions([]);
+        setMyRecordsAvailable(false);
         setLoans([]);
         setClaims([]);
         setMeetings([]);
         return;
       }
 
+      setMyRecordsAvailable(false);
+
       try {
         const [logRecords, meetingRecords, contributionRecords, loanRecords, claimRecords] = await Promise.all([
           organizationService.listAuditLogs(organization.id).catch(() => []),
           organizationService.listMeetings(organization.id).catch(() => []),
-          organizationService.listContributions(organization.id).catch(() => []),
+          organizationService.listContributions(organization.id).catch(() => null),
           organizationService.listLoans(organization.id).catch(() => []),
           organizationService.listWelfareClaims(organization.id).catch(() => []),
         ]);
@@ -122,7 +127,8 @@ export const Dashboard = () => {
           })),
         );
         setMeetings(meetingRecords);
-        setContributions(contributionRecords);
+        setContributions(contributionRecords ?? []);
+        setMyRecordsAvailable(contributionRecords !== null);
         setLoans(loanRecords);
         setClaims(claimRecords);
 
@@ -135,6 +141,7 @@ export const Dashboard = () => {
           setUpcomingMeeting(null);
           setUpcomingMeetingRecord(null);
           setContributions([]);
+          setMyRecordsAvailable(false);
           setLoans([]);
           setClaims([]);
           setMeetings([]);
@@ -161,6 +168,10 @@ export const Dashboard = () => {
   }, [claims, contributions, loans, meetings, organization, walletBalance]);
 
   const paidContributionCount = contributions.filter((item) => item.status === 'PAID').length;
+  const myContributions = contributions.filter((item) => item.memberId === userId && item.status !== 'REVERSED');
+  const myPaidTotal = myContributions.filter((item) => item.status === 'PAID').reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const myOpenCount = myContributions.filter((item) => ['PENDING', 'OVERDUE', 'PARTIAL'].includes(item.status)).length;
+  const myOverdueCount = myContributions.filter((item) => item.status === 'OVERDUE').length;
   const pendingContributionCount = contributions.filter((item) => item.status === 'PENDING' || item.status === 'OVERDUE' || item.status === 'PARTIAL').length;
   const activeLoanCount = loans.filter((item) => item.status === 'ACTIVE' || item.status === 'APPROVED').length;
   const pendingLoanCount = loans.filter((item) => item.status === 'PENDING').length;
@@ -443,6 +454,17 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {organization ? <section className="section-shell overflow-hidden" aria-labelledby="my-contributions-title">
+        <div className="section-header"><p className="text-sm text-[var(--ds-text-muted)]">Your records in {organization.name}</p><h2 id="my-contributions-title" className="text-xl font-black text-[var(--ds-secondary)]">My contributions</h2></div>
+        <div className="section-body space-y-4">
+          {myRecordsAvailable ? <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            <div className="rounded-xl bg-emerald-50 p-3"><p className="text-xs text-emerald-800">Confirmed paid</p><strong className="mt-1 block text-base text-emerald-950 sm:text-xl">{formatMoney(myPaidTotal, currency)}</strong></div>
+            <div className="rounded-xl bg-amber-50 p-3"><p className="text-xs text-amber-800">Open records</p><strong className="mt-1 block text-xl text-amber-950">{myOpenCount}</strong></div>
+            <div className="rounded-xl bg-rose-50 p-3"><p className="text-xs text-rose-800">Overdue</p><strong className="mt-1 block text-xl text-rose-950">{myOverdueCount}</strong></div>
+          </div> : <p className="text-sm text-[var(--ds-text-muted)]">Your contribution records are unavailable right now. Open Contributions to try again.</p>}
+          <Link className="btn btn-primary inline-flex items-center gap-2" to={ROUTES.chama.contributions(organization.id)}><ClipboardList className="h-4 w-4" /> View my records and statement <ArrowRight className="h-4 w-4" /></Link>
+        </div>
+      </section> : null}
       {compactLayout ? mobileLayout : <div className="chama360-workspace-page">
         <section className="chama360-dashboard-desktop-hero">
           {organization ? (
