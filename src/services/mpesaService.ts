@@ -6,6 +6,7 @@ import { ContributionService } from './contributionService';
 import { PaymentMethod, TransactionStatus } from '@prisma/client';
 import type { MpesaC2BConfirmationInput } from '../schemas/mpesa';
 import { allocatePaidContribution } from './contributionAllocationService';
+import { LedgerService } from './ledgerService';
 
 // Define AxiosInstance type locally if not available
 type AxiosInstance = ReturnType<typeof axios.create>;
@@ -315,12 +316,13 @@ export class MpesaService {
    * Create payment record in database
    */
   private async createPaymentRecord(data: Omit<PaymentRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<void> {
-    await prisma.transaction.create({
-      data: {
+    await LedgerService.recordContributionPayment(
+      { transaction: prisma.transaction },
+      {
+        organizationId: null,
         chamaId: data.chamaId,
-        type: 'CONTRIBUTION',
-        amount: data.amount,
         fromMemberId: data.memberId,
+        amount: data.amount,
         reference: `MPESA-${data.checkoutRequestId}`,
         idempotencyKey: data.checkoutRequestId,
         status: TransactionStatus.PENDING,
@@ -333,8 +335,8 @@ export class MpesaService {
           retryCount: data.retryCount,
           maxRetries: data.maxRetries,
         },
-      },
-    });
+      }
+    );
   }
 
   /**
@@ -379,9 +381,9 @@ export class MpesaService {
           item => item.Name === 'PhoneNumber'
         )?.Value as string;
 
-        // Update transaction status
-        await prisma.transaction.update({
-          where: { id: transaction.id },
+        // Claim the callback atomically. A repeated or concurrent callback must not post twice.
+        const claimed = await prisma.transaction.updateMany({
+          where: { id: transaction.id, status: TransactionStatus.PENDING },
           data: {
             status: TransactionStatus.COMPLETED,
             metadata: {
@@ -391,18 +393,31 @@ export class MpesaService {
               phoneNumber,
               resultCode: ResultCode,
               resultDescription: ResultDesc,
+              callbackPayload: callbackData,
               completedAt: new Date(),
             },
           },
         });
+        if (claimed.count === 0) {
+          logger.info('Ignoring duplicate or already-claimed M-Pesa callback', { checkoutRequestId: CheckoutRequestID });
+          return;
+        }
 
         // Automatically reconcile payment with contribution
-        await this.reconcilePayment({
-          contributionId: metadata.contributionId,
-          amount: Number(transaction.amount),
-          transactionRef: mpesaReceiptNumber,
-          phoneNumber: phoneNumber,
-        });
+        try {
+          await this.reconcilePayment({
+            contributionId: metadata.contributionId,
+            amount: Number(transaction.amount),
+            transactionRef: mpesaReceiptNumber,
+            phoneNumber: phoneNumber,
+          });
+        } catch (reconciliationError) {
+          await prisma.transaction.update({
+            where: { id: transaction.id },
+            data: { status: TransactionStatus.PENDING, metadata: { ...metadata, callbackPayload: callbackData, reconciliationError: reconciliationError instanceof Error ? reconciliationError.message : 'Reconciliation failed' } },
+          });
+          throw reconciliationError;
+        }
 
         logger.info('M-Pesa payment successful and reconciled', {
           checkoutRequestId: CheckoutRequestID,
@@ -412,18 +427,20 @@ export class MpesaService {
         });
       } else {
         // Payment failed
-        await prisma.transaction.update({
-          where: { id: transaction.id },
+        const failed = await prisma.transaction.updateMany({
+          where: { id: transaction.id, status: TransactionStatus.PENDING },
           data: {
             status: TransactionStatus.FAILED,
             metadata: {
               ...metadata,
               resultCode: ResultCode,
               resultDescription: ResultDesc,
+              callbackPayload: callbackData,
               failedAt: new Date(),
             },
           },
         });
+        if (failed.count === 0) return;
 
         // Check if we should retry
         const retryCount = metadata.retryCount || 0;
@@ -568,7 +585,7 @@ export class MpesaService {
         throw new Error('Contribution not found');
       }
 
-      // Record payment using ContributionService
+      // Record payment using the shared ledger path and then keep the contribution state in sync.
       await ContributionService.recordPayment(
         {
           contributionId: data.contributionId,
@@ -578,6 +595,26 @@ export class MpesaService {
           paidDate: new Date().toISOString(),
         },
         contribution.memberId // System reconciliation uses member's ID
+      );
+
+      await LedgerService.recordContributionPayment(
+        { transaction: prisma.transaction },
+        {
+          organizationId: contribution.organizationId ?? null,
+          chamaId: contribution.chamaId,
+          fromMemberId: contribution.memberId,
+          amount: data.amount,
+          reference: data.transactionRef,
+          idempotencyKey: `mpesa:${data.transactionRef}:${data.contributionId}`,
+          status: TransactionStatus.COMPLETED,
+          metadata: {
+            contributionId: data.contributionId,
+            paymentMethod: 'MPESA',
+            transactionRef: data.transactionRef,
+            phoneNumber: data.phoneNumber,
+            source: 'CALLBACK_SUCCESS',
+          },
+        }
       );
 
       logger.info('Payment reconciled with contribution', {

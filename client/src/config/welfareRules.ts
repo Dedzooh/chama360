@@ -78,7 +78,11 @@ export const normalizeWelfareRules = (value: unknown, enabledFallback = true): W
     });
     if (typeof match === 'string') return { ...fallback, enabled: true, label: match };
     return normalizeCategory(match, fallback);
-  });
+  }).concat(
+    legacyCategories
+      .filter((category) => typeof category === 'object' && category !== null && !DEFAULT_WELFARE_RULES.categories.some((fallback) => fallback.key === String((category as { key?: unknown }).key ?? '').toUpperCase()))
+      .map((category) => normalizeCategory(category, { key: 'CUSTOM', label: 'Custom benefit', enabled: true, limit: DEFAULT_WELFARE_RULES.maxClaimAmount, documents: [] })),
+  );
 
   return {
     enabled: toBoolean(source.enabled, enabledFallback),

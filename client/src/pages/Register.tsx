@@ -10,7 +10,10 @@ import { Button, TextField } from '../design-system';
 const Register = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const returnTo = (location.state as { from?: string } | null)?.from;
+  const returnTo = (location.state as { from?: string } | null)?.from
+    ?? sessionStorage.getItem('pending_organization_invite')
+    ?? sessionStorage.getItem('pending_invite_link')
+    ?? undefined;
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -96,6 +99,7 @@ const Register = () => {
       }
     >
       <form className="space-y-4" onSubmit={submitRegistration}>
+        {returnTo?.startsWith('/org-invite/') || returnTo?.startsWith('/join/') ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">After email verification, you will return to your invitation to join the Chama.</div> : null}
         {error ? <div className="error-banner px-4 py-3 text-sm">{error}</div> : null}
 
         <div className="grid gap-4 sm:grid-cols-2">

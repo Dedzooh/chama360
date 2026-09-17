@@ -392,6 +392,14 @@ export class NotificationService {
     );
   }
 
+  static async sendPasswordReset(email: string, firstName: string, code: string): Promise<void> {
+    await sendTransactionalEmail(
+      email,
+      'Reset your CHAMA360 password',
+      `Hello ${firstName}, your CHAMA360 password reset code is ${code}. It expires in 15 minutes. Never share this code with anyone.`
+    );
+  }
+
   /**
    * Send phone verification notification
    */

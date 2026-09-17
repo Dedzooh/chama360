@@ -88,6 +88,13 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
     if (location.pathname === ROUTES.app.designSystem) return 'Design System';
     if (location.pathname === ROUTES.app.profile) return 'Profile';
     if (location.pathname === ROUTES.app.notifications) return 'Notifications';
+    if (location.pathname === ROUTES.more.settings) return 'Settings';
+    if (location.pathname === ROUTES.more.meetings) return 'Meetings';
+    if (location.pathname === ROUTES.more.reports) return 'Reports';
+    if (location.pathname === ROUTES.more.documents) return 'Documents';
+    if (location.pathname === ROUTES.more.voting) return 'Voting';
+    if (location.pathname === ROUTES.more.auditLogs) return 'Audit Trail';
+    if (location.pathname === ROUTES.more.help) return 'Help';
     return 'Dashboard';
   }, [currentOrganization?.name, location.pathname]);
 
@@ -126,26 +133,48 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
   };
 
   const quickSheetItems = [
+    ...(activeOrganizationId ? [{ label: 'Pay contribution', to: ROUTES.chama.contributions(activeOrganizationId), icon: Wallet, tone: 'green' as const }] : []),
+    ...(activeOrganizationId ? [{ label: 'Members', to: ROUTES.chama.members(activeOrganizationId), icon: UserCircle2, tone: 'blue' as const }] : []),
+    ...(activeOrganizationId && currentOrganization?.enabledModules?.welfare ? [{ label: 'Welfare', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' as const }] : []),
     { label: 'Create Chama', to: ROUTES.app.createChama, icon: Plus, tone: 'green' },
     { label: 'Join Chama', to: ROUTES.app.joinChama, icon: UserPlus, tone: 'blue' },
+    { label: 'Notifications', to: ROUTES.app.notifications, icon: Bell, tone: 'gold' },
     { label: 'Scan QR', to: ROUTES.app.mobile, icon: QrCode, tone: 'gold' },
     { label: 'Import', to: ROUTES.app.mobile, icon: Upload, tone: 'purple' },
   ] as const;
 
-  const moreSheetItems = [
-    { label: 'Profile', to: ROUTES.app.profile, icon: UserCircle2, tone: 'green' },
-    { label: 'Settings', to: ROUTES.more.settings, icon: Settings, tone: 'navy' },
-    { label: 'Notifications', to: ROUTES.app.notifications, icon: Bell, tone: 'gold' },
-    { label: 'Documents', to: ROUTES.more.documents, icon: FileText, tone: 'blue' },
-    { label: 'Meetings', to: ROUTES.more.meetings, icon: CalendarDays, tone: 'green-soft' },
+  const roleMoreItems = [
+    ...(activeOrganizationId ? [{ label: 'Members', to: ROUTES.chama.members(activeOrganizationId), icon: UserCircle2, tone: 'green' as const }] : []),
+    ...(activeOrganizationId && currentOrganization?.enabledModules?.welfare ? [{ label: 'Welfare', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' as const }] : []),
+    ...(activeOrganizationId ? [{ label: 'Reports', to: ROUTES.chama.reports(activeOrganizationId), icon: ShieldCheck, tone: 'purple' as const }] : []),
+    ...(activeOrganizationId ? [{ label: 'Meetings', to: ROUTES.chama.meetings(activeOrganizationId), icon: CalendarDays, tone: 'green-soft' as const }] : []),
     ...(currentOrganization?.enabledModules?.voting && activeOrganizationId ? [{ label: 'Voting', to: ROUTES.chama.voting(activeOrganizationId), icon: Vote, tone: 'gold' as const }] : []),
-    ...(currentOrganization?.enabledModules?.investments && activeOrganizationId ? [{ label: 'Investments', to: ROUTES.chama.investments(activeOrganizationId), icon: LineChart, tone: 'teal' as const }] : []),
-    { label: 'Reports', to: ROUTES.more.reports, icon: ShieldCheck, tone: 'purple' },
+    { label: 'Profile', to: ROUTES.app.profile, icon: UserCircle2, tone: 'green' },
+    { label: 'Documents', to: ROUTES.more.documents, icon: FileText, tone: 'blue' },
+    { label: 'Settings', to: ROUTES.more.settings, icon: Settings, tone: 'navy' },
     ...(canViewAuditTrail ? [{ label: 'Audit Trail', to: ROUTES.more.auditLogs, icon: Activity, tone: 'navy' as const }] : []),
-    { label: 'M-Pesa', to: ROUTES.admin.mpesa, icon: Wallet, tone: 'teal' },
+    ...(currentOrganization?.enabledModules?.investments && activeOrganizationId ? [{ label: 'Investments', to: ROUTES.chama.investments(activeOrganizationId), icon: LineChart, tone: 'teal' as const }] : []),
     { label: 'Help', to: ROUTES.more.help, icon: HeartHandshake, tone: 'pink' },
+    ...(canUseMpesaAdmin ? [{ label: 'M-Pesa', to: ROUTES.admin.mpesa, icon: Wallet, tone: 'teal' as const }] : []),
+    { label: 'Logout', to: ROUTES.auth.login, icon: LogOut, tone: 'rose' },
   ] as const;
-  const visibleMoreSheetItems = moreSheetItems.filter((item) => item.label === 'Settings' ? canManageWorkspace : item.label === 'M-Pesa' ? canUseMpesaAdmin : true);
+  const visibleMoreSheetItems = roleMoreItems.filter((item) => {
+    if (item.label === 'Settings') return canManageWorkspace;
+    if (item.label === 'M-Pesa') return canUseMpesaAdmin;
+    return true;
+  });
+
+  const roleFocusActions = activeOrganizationId
+    ? [
+        { label: 'Members', to: ROUTES.chama.members(activeOrganizationId), icon: UserCircle2, tone: 'green' },
+        { label: 'Contributions', to: ROUTES.chama.contributions(activeOrganizationId), icon: Wallet, tone: 'emerald' },
+        { label: 'Welfare', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' },
+        { label: 'Reports', to: ROUTES.chama.reports(activeOrganizationId), icon: ShieldCheck, tone: 'purple' },
+      ]
+    : [
+        { label: 'Create Chama', to: ROUTES.app.createChama, icon: Plus, tone: 'green' },
+        { label: 'Join Chama', to: ROUTES.app.joinChama, icon: UserPlus, tone: 'blue' },
+      ];
 
   return (
     <div className="min-h-screen text-slate-900">
@@ -195,6 +224,31 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
 
       <main className="mx-auto w-full max-w-[760px] px-4 pb-28 pt-4 sm:px-6 mobile-safe-bottom">
         {error ? <div className="error-banner mb-4 px-4 py-3 text-sm">{error}</div> : null}
+
+        <section className="mb-4 hidden md:block">
+          <div className="rounded-[var(--ds-radius-xl)] border border-[var(--ds-border)] bg-[linear-gradient(135deg,rgba(15,132,95,0.08),rgba(15,132,95,0.02))] p-4 shadow-[var(--ds-shadow-soft)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">Role workspace</p>
+                <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">{(roleLabel[roleName] ?? roleName) || 'Member'} access</h2>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {roleFocusActions.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link key={item.label} to={item.to} className="inline-flex items-center gap-2 rounded-full border border-[var(--ds-border)] bg-white px-3 py-2 text-sm font-semibold text-[var(--ds-secondary)] shadow-sm transition hover:border-[var(--ds-primary)] hover:text-[var(--ds-primary)]">
+                      <span className={`flex h-7 w-7 items-center justify-center rounded-full ${item.tone === 'green' ? 'bg-emerald-100 text-emerald-700' : item.tone === 'emerald' ? 'bg-emerald-100 text-emerald-700' : item.tone === 'pink' ? 'bg-rose-100 text-rose-700' : item.tone === 'purple' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}`}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+
         <Outlet />
       </main>
 

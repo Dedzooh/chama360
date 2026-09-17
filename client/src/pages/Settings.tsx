@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Archive, BellRing, CreditCard, HeartHandshake, Layers3, RefreshCcw, Save } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Archive, BellRing, CreditCard, HeartHandshake, Layers3, RefreshCcw, Save, ShieldAlert } from 'lucide-react';
 import { useOrganizationWorkspace } from '../context/OrganizationWorkspaceContext';
 import { organizationService } from '../services/organizationService';
 import { getModuleLabel } from '../config/chamaBlueprint';
 import { documentsToText, getEnabledWelfareCategories, normalizeWelfareRules, textToDocuments, WELFARE_APPROVAL_OPTIONS, type WelfareCategoryRule, type WelfareRulesConfig } from '../config/welfareRules';
-import { Badge, Button, Card, EmptyState, SelectField, TextField } from '../design-system';
+import { Badge, Button, Card, ConfirmDialog, EmptyState, SelectField, TextField } from '../design-system';
 
 type OrganizationMetadata = {
   paymentSettings?: {
@@ -22,6 +23,21 @@ type OrganizationMetadata = {
     inApp?: boolean;
   };
   welfareRules?: WelfareRulesConfig;
+};
+
+type SettingsSnapshot = {
+  form: { name: string; description: string };
+  paymentForm: {
+    mode: 'MPESA_NUMBER' | 'PAYBILL';
+    mpesaNumber: string;
+    paybillNumber: string;
+    accountNumber: string;
+    accountReference: string;
+    transactionDesc: string;
+    isEnabled: boolean;
+  };
+  notificationForm: { sms: boolean; email: boolean; inApp: boolean };
+  welfareForm: WelfareRulesConfig;
 };
 
 export const Settings = () => {
@@ -45,6 +61,9 @@ export const Settings = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [activeSection, setActiveSection] = useState<'overview' | 'payments' | 'welfare' | 'notifications'>('overview');
+  const [savedSnapshot, setSavedSnapshot] = useState<SettingsSnapshot | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<'SUSPENDED' | 'CLOSED' | 'ARCHIVED' | null>(null);
 
   useEffect(() => {
     const metadata = (currentOrganization?.metadata ?? {}) as OrganizationMetadata;
@@ -66,8 +85,47 @@ export const Settings = () => {
       email: metadata.notificationSettings?.email ?? true,
       inApp: metadata.notificationSettings?.inApp ?? true,
     });
-    setWelfareForm(normalizeWelfareRules(metadata.welfareRules, Boolean(currentOrganization?.enabledModules?.welfare)));
+    const nextWelfareForm = normalizeWelfareRules(metadata.welfareRules, Boolean(currentOrganization?.enabledModules?.welfare));
+    setWelfareForm(nextWelfareForm);
+    setSavedSnapshot({
+      form: { name: currentOrganization?.name ?? '', description: currentOrganization?.description ?? '' },
+      paymentForm: {
+        mode: metadata.paymentSettings?.mode ?? 'MPESA_NUMBER',
+        mpesaNumber: metadata.paymentSettings?.mpesaNumber ?? '',
+        paybillNumber: metadata.paymentSettings?.paybillNumber ?? '',
+        accountNumber: metadata.paymentSettings?.accountNumber ?? '',
+        accountReference: metadata.paymentSettings?.accountReference ?? '',
+        transactionDesc: metadata.paymentSettings?.transactionDesc ?? '',
+        isEnabled: metadata.paymentSettings?.isEnabled ?? true,
+      },
+      notificationForm: {
+        sms: metadata.notificationSettings?.sms ?? true,
+        email: metadata.notificationSettings?.email ?? true,
+        inApp: metadata.notificationSettings?.inApp ?? true,
+      },
+      welfareForm: nextWelfareForm,
+    });
   }, [currentOrganization?.description, currentOrganization?.enabledModules?.welfare, currentOrganization?.metadata, currentOrganization?.name]);
+
+  const currentSnapshot: SettingsSnapshot = { form, paymentForm, notificationForm, welfareForm };
+  const hasUnsavedChanges = savedSnapshot ? JSON.stringify(currentSnapshot) !== JSON.stringify(savedSnapshot) : false;
+  const paymentError = paymentForm.mode === 'MPESA_NUMBER'
+    ? paymentForm.mpesaNumber.trim() && !/^\+?254\d{9}$/.test(paymentForm.mpesaNumber.trim())
+      ? 'Use a Kenyan number like 254712345678.'
+      : ''
+    : paymentForm.paybillNumber.trim() && !/^\d{5,7}$/.test(paymentForm.paybillNumber.trim())
+      ? 'Enter a valid 5 to 7 digit PayBill number.'
+      : '';
+
+  useEffect(() => {
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [hasUnsavedChanges]);
 
   const updateField = (field: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -96,8 +154,23 @@ export const Settings = () => {
     }
   };
 
-  const saveEnterpriseSettings = async () => {
+  const discardChanges = () => {
+    if (!savedSnapshot) return;
+    setForm(savedSnapshot.form);
+    setPaymentForm(savedSnapshot.paymentForm);
+    setNotificationForm(savedSnapshot.notificationForm);
+    setWelfareForm(savedSnapshot.welfareForm);
+    setMessage('Unsaved changes discarded.');
+    setError('');
+  };
+
+  const saveEnterpriseSettings = async (section: 'payment' | 'welfare' | 'notification' | 'all' = 'all') => {
     if (!currentOrganization?.id) return;
+    if (paymentError) {
+      setActiveSection('payments');
+      setError(paymentError);
+      return;
+    }
     setSaving(true);
     setError('');
     setMessage('');
@@ -122,7 +195,8 @@ export const Settings = () => {
           },
         },
       });
-      setMessage('Enterprise settings saved.');
+      setSavedSnapshot(currentSnapshot);
+      setMessage(`${section === 'all' ? 'Settings' : `${section[0].toUpperCase()}${section.slice(1)} settings`} saved successfully.`);
       await refreshOrganizations();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to save enterprise settings');
@@ -133,6 +207,28 @@ export const Settings = () => {
 
   const updateStatus = async (status: 'ACTIVE' | 'SUSPENDED' | 'CLOSED' | 'ARCHIVED') => {
     if (!currentOrganization?.id) return;
+    if (status !== 'ACTIVE') {
+      setPendingStatus(status);
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await organizationService.updateOrganization(currentOrganization.id, { status });
+      setMessage(`Organization moved to ${status.toLowerCase()}.`);
+      await refreshOrganizations();
+    } catch (statusError) {
+      setError(statusError instanceof Error ? statusError.message : 'Failed to update status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmStatusChange = async () => {
+    if (!pendingStatus || !currentOrganization?.id) return;
+    const status = pendingStatus;
+    setPendingStatus(null);
     setSaving(true);
     setError('');
     setMessage('');
@@ -155,6 +251,12 @@ export const Settings = () => {
     .filter(([, enabled]) => enabled)
     .map(([module]) => getModuleLabel(module));
   const enabledWelfareCategories = getEnabledWelfareCategories(welfareForm);
+  const enabledSettingsSections = [
+    { value: 'overview' as const, label: 'General' },
+    ...(currentOrganization.enabledModules?.mpesa ? [{ value: 'payments' as const, label: 'Payments' }] : []),
+    ...(currentOrganization.enabledModules?.welfare ? [{ value: 'welfare' as const, label: 'Welfare' }] : []),
+    { value: 'notifications' as const, label: 'Notifications' },
+  ];
 
   const patchWelfareRules = (patch: Partial<WelfareRulesConfig>) => {
     setWelfareForm((current) => ({ ...current, ...patch }));
@@ -181,18 +283,22 @@ export const Settings = () => {
             <small>Update basics, configure payments, review modules, and control lifecycle status.</small>
           </div>
           <div className="chama360-module-hero-actions">
-            <a href="#organization-basics">
+            <button type="button" onClick={() => setActiveSection('overview')} className={activeSection === 'overview' ? 'is-active' : ''}>
               <Save className="h-4 w-4" />
-              Basics
-            </a>
-            <a href="#enterprise-settings">
+              Overview
+            </button>
+            <button type="button" onClick={() => setActiveSection('payments')} className={activeSection === 'payments' ? 'is-active' : ''}>
               <CreditCard className="h-4 w-4" />
-              Enterprise
-            </a>
-            <a href="#welfare-rules-settings">
+              Payments
+            </button>
+            <button type="button" onClick={() => setActiveSection('welfare')} className={activeSection === 'welfare' ? 'is-active' : ''}>
               <HeartHandshake className="h-4 w-4" />
               Welfare
-            </a>
+            </button>
+            <button type="button" onClick={() => setActiveSection('notifications')} className={activeSection === 'notifications' ? 'is-active' : ''}>
+              <BellRing className="h-4 w-4" />
+              Notifications
+            </button>
           </div>
         </div>
         <div className="chama360-module-hero-stats">
@@ -220,7 +326,35 @@ export const Settings = () => {
       {error ? <Card className="border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">{error}</Card> : null}
       {message ? <Card className="border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800">{message}</Card> : null}
 
-      <section className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
+      {hasUnsavedChanges ? (
+        <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-[var(--ds-radius-lg)] border border-amber-300 bg-amber-50 p-4 shadow-lg sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-bold text-amber-950">You have unsaved changes</p>
+            <p className="text-sm text-amber-800">Save them before leaving this page.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={discardChanges}>Discard</Button>
+            <Button type="button" loading={saving} onClick={() => void saveEnterpriseSettings('all')} startIcon={!saving ? <Save className="h-4 w-4" /> : undefined}>Save changes</Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex gap-2 overflow-x-auto border-b border-[var(--ds-border)] pb-2" role="tablist" aria-label="Settings sections">
+        {enabledSettingsSections.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={activeSection === value}
+            onClick={() => setActiveSection(value)}
+            className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-bold transition ${activeSection === value ? 'bg-[var(--ds-secondary)] text-white' : 'bg-[var(--ds-surface-3)] text-[var(--ds-text-muted)] hover:text-[var(--ds-secondary)]'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeSection === 'overview' ? <section className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
         <Card id="organization-basics" className="p-6">
           <p className="text-sm text-[var(--ds-text-muted)]">Basics</p>
           <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Edit organization</h2>
@@ -231,37 +365,30 @@ export const Settings = () => {
               <textarea value={form.description} onChange={(event) => updateField('description', event.target.value)} rows={5} className="input min-h-32 w-full" />
             </label>
             <Button type="submit" loading={saving} className="w-full" startIcon={!saving ? <Save className="h-4 w-4" /> : undefined}>
-              Save settings
+              Save general settings
             </Button>
           </form>
         </Card>
 
         <Card className="p-6">
-          <p className="text-sm text-[var(--ds-text-muted)]">Lifecycle</p>
-          <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Status controls</h2>
+          <p className="text-sm text-[var(--ds-text-muted)]">Personal account</p>
+          <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Your account settings</h2>
+          <p className="mt-2 text-sm text-[var(--ds-text-muted)]">Password, MFA, active sessions, and personal notification preferences are managed separately.</p>
           <div className="mt-5 grid gap-3">
-            <Button variant="outline" onClick={() => void updateStatus('ACTIVE')} disabled={saving} startIcon={<RefreshCcw className="h-4 w-4" />}>
-              Activate
-            </Button>
-            <Button variant="outline" onClick={() => void updateStatus('SUSPENDED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
-              Suspend
-            </Button>
-            <Button variant="outline" onClick={() => void updateStatus('CLOSED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
-              Close
-            </Button>
-            <Button onClick={() => void updateStatus('ARCHIVED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
-              Archive
-            </Button>
+            <Link to="/profile" className="btn btn-outline">Open profile and security</Link>
+            <Link to="/notifications" className="btn btn-outline">Open personal notifications</Link>
           </div>
         </Card>
-      </section>
 
-      <section id="enterprise-settings" className="grid gap-6 lg:grid-cols-2">
-        <Card className="space-y-4 p-6">
+      </section> : null}
+
+      {activeSection === 'payments' ? <section id="enterprise-settings" className="grid gap-6 lg:grid-cols-2">
+        <Card className="space-y-4 p-6 lg:col-span-2">
           <div>
-            <p className="font-semibold text-[var(--ds-secondary)]">M-Pesa setup</p>
+            <p className="font-semibold text-[var(--ds-secondary)]">Payment settings</p>
             <p className="text-sm text-[var(--ds-text-muted)]">Save the default payment profile for contributions and reconciliation.</p>
           </div>
+          {!paymentForm.isEnabled ? <div className="rounded-[var(--ds-radius-lg)] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">M-Pesa defaults are currently disabled. Enable them below before members can use this payment profile.</div> : null}
           <SelectField label="Mode" value={paymentForm.mode} onChange={(event) => setPaymentForm((current) => ({ ...current, mode: event.target.value as 'MPESA_NUMBER' | 'PAYBILL' }))}>
             <option value="MPESA_NUMBER">M-Pesa Number</option>
             <option value="PAYBILL">PayBill</option>
@@ -271,6 +398,7 @@ export const Settings = () => {
           ) : (
             <TextField label="PayBill number" placeholder="123456" value={paymentForm.paybillNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, paybillNumber: event.target.value }))} />
           )}
+          {paymentError ? <p className="text-sm font-semibold text-rose-700" role="alert">{paymentError}</p> : <p className="text-sm text-[var(--ds-text-muted)]">Use the number members will see when making contributions.</p>}
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField label="Account number" value={paymentForm.accountNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, accountNumber: event.target.value }))} />
             <TextField label="Account reference" value={paymentForm.accountReference} onChange={(event) => setPaymentForm((current) => ({ ...current, accountReference: event.target.value }))} />
@@ -283,13 +411,20 @@ export const Settings = () => {
             </div>
             <input type="checkbox" checked={paymentForm.isEnabled} onChange={(event) => setPaymentForm((current) => ({ ...current, isEnabled: event.target.checked }))} />
           </label>
+          <Button type="button" onClick={() => void saveEnterpriseSettings('payment')} loading={saving} className="w-full" startIcon={!saving ? <Save className="h-4 w-4" /> : undefined}>
+            Save payment settings
+          </Button>
         </Card>
 
-        <Card id="welfare-rules-settings" className="space-y-4 p-6">
+      </section> : null}
+
+      {activeSection === 'welfare' ? <section id="welfare-rules-settings" className="grid gap-6">
+        <Card className="space-y-4 p-6">
           <div>
             <p className="font-semibold text-[var(--ds-secondary)]">Welfare rules</p>
             <p className="text-sm text-[var(--ds-text-muted)]">Customize welfare contributions, claim limits, categories, and approval expectations.</p>
           </div>
+          {!welfareForm.enabled ? <div className="rounded-[var(--ds-radius-lg)] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Welfare is disabled for this Chama. Enable it below to make these rules available to members.</div> : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField
               label="Monthly contribution"
@@ -346,11 +481,14 @@ export const Settings = () => {
               ))}
             </div>
           </div>
-          <Button type="button" onClick={() => void saveEnterpriseSettings()} loading={saving} className="w-full" startIcon={!saving ? <Save className="h-4 w-4" /> : undefined}>
-            Save welfare rules
+          <Button type="button" onClick={() => void saveEnterpriseSettings('welfare')} loading={saving} className="w-full" startIcon={!saving ? <Save className="h-4 w-4" /> : undefined}>
+            Save welfare settings
           </Button>
         </Card>
 
+      </section> : null}
+
+      {activeSection === 'notifications' ? <section className="grid gap-6">
         <Card className="space-y-4 p-6">
           <div>
             <p className="font-semibold text-[var(--ds-secondary)]">Notification defaults</p>
@@ -377,13 +515,38 @@ export const Settings = () => {
             </div>
             <input type="checkbox" checked={notificationForm.sms} onChange={(event) => setNotificationForm((current) => ({ ...current, sms: event.target.checked }))} />
           </label>
-          <Button type="button" onClick={() => void saveEnterpriseSettings()} loading={saving} className="w-full" startIcon={!saving ? <Save className="h-4 w-4" /> : undefined}>
-            Save enterprise settings
+          <Button type="button" onClick={() => void saveEnterpriseSettings('notification')} loading={saving} className="w-full" startIcon={!saving ? <Save className="h-4 w-4" /> : undefined}>
+            Save notification settings
           </Button>
         </Card>
-      </section>
+      </section> : null}
 
-      <Card className="p-6">
+      {activeSection === 'overview' ? <Card className="border-rose-200 bg-rose-50/50 p-6">
+        <div className="flex items-start gap-3">
+          <ShieldAlert className="mt-1 h-5 w-5 text-rose-700" />
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide text-rose-700">Danger zone</p>
+            <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Organization lifecycle</h2>
+            <p className="mt-1 text-sm text-[var(--ds-text-muted)]">These actions can interrupt access or hide the Chama from normal workflows.</p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <Button variant="outline" onClick={() => void updateStatus('ACTIVE')} disabled={saving} startIcon={<RefreshCcw className="h-4 w-4" />}>
+            Activate
+          </Button>
+          <Button variant="outline" onClick={() => void updateStatus('SUSPENDED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
+            Suspend
+          </Button>
+          <Button variant="outline" onClick={() => void updateStatus('CLOSED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
+            Close
+          </Button>
+          <Button onClick={() => void updateStatus('ARCHIVED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
+            Archive
+          </Button>
+        </div>
+      </Card> : null}
+
+      {activeSection === 'overview' ? <Card className="p-6">
         <p className="text-sm text-[var(--ds-text-muted)]">Enabled modules</p>
         <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Current setup</h2>
         <div className="mt-4">
@@ -399,7 +562,18 @@ export const Settings = () => {
             </div>
           )}
         </div>
-      </Card>
+      </Card> : null}
+
+      <ConfirmDialog
+        open={Boolean(pendingStatus)}
+        title={`Move organization to ${pendingStatus?.toLowerCase() ?? 'a new status'}?`}
+        description="This may affect member access, payments, and normal Chama workflows. You can change the status again later."
+        confirmLabel={`Confirm ${pendingStatus?.toLowerCase() ?? 'change'}`}
+        destructive
+        busy={saving}
+        onClose={() => setPendingStatus(null)}
+        onConfirm={() => void confirmStatusChange()}
+      />
     </div>
   );
 };

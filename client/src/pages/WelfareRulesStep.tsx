@@ -1,4 +1,4 @@
-import { BellRing, FileText, HeartHandshake, ShieldCheck } from 'lucide-react';
+import { BellRing, FileText, HeartHandshake, Plus, ShieldCheck } from 'lucide-react';
 import { getWizardRouteBefore } from '../config/chamaBlueprint';
 import { ROUTES } from '../config/routes';
 import { documentsToText, normalizeWelfareRules, textToDocuments, WELFARE_APPROVAL_OPTIONS, type WelfareCategoryRule, type WelfareRulesConfig } from '../config/welfareRules';
@@ -29,6 +29,11 @@ export const WelfareRulesStep = () => {
     patchRules({
       categories: rules.categories.map((category) => (category.key === key ? { ...category, ...patch } : category)),
     });
+  };
+
+  const addCustomBenefit = () => {
+    const key = `CUSTOM_${Date.now()}`;
+    patchRules({ categories: [...rules.categories, { key, label: 'Custom benefit', enabled: true, limit: rules.maxClaimAmount, documents: [] }] });
   };
 
   const enabledCategories = rules.categories.filter((category) => category.enabled);
@@ -122,6 +127,7 @@ export const WelfareRulesStep = () => {
       <Card className="p-5">
         <p className="text-sm text-[var(--ds-text-muted)]">Categories</p>
         <h3 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Claim category rules</h3>
+        <button type="button" onClick={addCustomBenefit} className="btn btn-outline mt-4"><Plus className="h-4 w-4" /> Add custom benefit</button>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {rules.categories.map((category) => (
             <div key={category.key} className="rounded-[1.15rem] border border-[var(--ds-border)] bg-white p-4 shadow-[var(--ds-shadow-soft)]">

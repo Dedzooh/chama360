@@ -16,7 +16,7 @@ export interface WizardDraftState {
   logoUrl?: string;
   coverImageUrl?: string;
   welfareRules?: WelfareRulesConfig;
-  contributionRules?: { amount: number; frequency: 'daily' | 'weekly' | 'monthly'; dueDate: string; latePenalty: number; gracePeriodDays: number };
+  contributionRules?: { amount: number; frequency: 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'one_time' | 'custom'; dueDate: string; latePenalty: number; gracePeriodDays: number; lateAllowed?: boolean; startDate?: string; applyTo?: 'all_members' | 'active_members'; customFrequency?: string };
   loanRules?: { enabled: boolean; interestRate: number; maxLoanMultiplier: number; repaymentPeriodMonths: number; guarantorsRequired: number; lateRepaymentPenalty: number };
   metadata?: Record<string, unknown>;
 }
@@ -48,7 +48,7 @@ export const WizardLayout = () => {
     town: '',
     phone: '',
     enabledModules: getDefaultEnabledModules(ChamaType.Savings),
-    contributionRules: { amount: 1000, frequency: 'monthly', dueDate: '', latePenalty: 0, gracePeriodDays: 3 },
+    contributionRules: { amount: 1000, frequency: 'monthly', dueDate: '', latePenalty: 0, gracePeriodDays: 3, lateAllowed: true, startDate: '', applyTo: 'all_members' },
     loanRules: { enabled: false, interestRate: 5, maxLoanMultiplier: 3, repaymentPeriodMonths: 6, guarantorsRequired: 2, lateRepaymentPenalty: 0 },
   };
   const [draft, setDraft] = React.useState<WizardDraftState>(() => {

@@ -38,18 +38,20 @@ export const ADMIN_SCREENS = [
 
 export const BOTTOM_NAV = [
   { label: "Home", to: "/dashboard" },
-  { label: "Members", to: "/members" },
-  { label: "Finance", to: "/finance" },
+  { label: "Pay", to: "/contributions" },
   { label: "Welfare", to: "/welfare" },
+  { label: "Activity", to: "/notifications" },
   { label: "More", to: "/more" },
 ];
 
 export const MORE_MENU = [
+  { label: "Members", to: "/members" },
   { label: "Meetings", to: "/meetings" },
-  { label: "Reports", to: "/reports" },
-  { label: "Documents", to: "/documents" },
   { label: "Voting", to: "/voting" },
+  { label: "Statements", to: "/reports" },
+  { label: "Documents", to: "/documents" },
+  { label: "Reports", to: "/reports" },
   { label: "Settings", to: "/settings" },
-  { label: "Audit Logs", to: "/audit-logs" },
   { label: "Help", to: "/help" },
+  { label: "Logout", to: "/logout" },
 ];

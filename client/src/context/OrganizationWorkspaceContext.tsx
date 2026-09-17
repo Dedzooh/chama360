@@ -9,6 +9,7 @@ interface OrganizationWorkspaceContextValue {
   loading: boolean;
   error: string | null;
   refreshOrganizations: () => Promise<void>;
+  setActiveOrganizationId: (organizationId: string) => void;
 }
 
 const OrganizationWorkspaceContext = createContext<OrganizationWorkspaceContextValue | null>(null);
@@ -18,12 +19,21 @@ interface OrganizationWorkspaceProviderProps {
   selectedOrganizationId?: string | null;
 }
 
+const ACTIVE_ORGANIZATION_KEY = 'chama360:active-organization-id';
+
 export const OrganizationWorkspaceProvider = ({ children, selectedOrganizationId }: OrganizationWorkspaceProviderProps) => {
   const { isAuthenticated } = useAuthStore();
+  const [storedOrganizationId, setStoredOrganizationId] = useState<string | null>(() => selectedOrganizationId ?? localStorage.getItem(ACTIVE_ORGANIZATION_KEY));
   const [organizations, setOrganizations] = useState<OrganizationSummary[]>([]);
   const [currentOrganization, setCurrentOrganization] = useState<OrganizationDetail | OrganizationSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const activeSelection = selectedOrganizationId ?? storedOrganizationId;
+  const setActiveOrganizationId = useCallback((organizationId: string) => {
+    setStoredOrganizationId(organizationId);
+    localStorage.setItem(ACTIVE_ORGANIZATION_KEY, organizationId);
+  }, []);
 
   const refreshOrganizations = useCallback(async () => {
     if (!isAuthenticated) {
@@ -41,8 +51,11 @@ export const OrganizationWorkspaceProvider = ({ children, selectedOrganizationId
       const myOrganizations = await organizationService.listMyOrganizations();
       setOrganizations(myOrganizations);
 
-      if (selectedOrganizationId) {
-        const selected = await organizationService.getOrganization(selectedOrganizationId);
+      const preferred = activeSelection ? myOrganizations.find((organization) => organization.id === activeSelection) : undefined;
+      const fallback = preferred ?? myOrganizations[0];
+      if (fallback) {
+        setActiveOrganizationId(fallback.id);
+        const selected = await organizationService.getOrganization(fallback.id);
         setCurrentOrganization(selected);
       } else {
         setCurrentOrganization(null);
@@ -62,7 +75,11 @@ export const OrganizationWorkspaceProvider = ({ children, selectedOrganizationId
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, selectedOrganizationId]);
+  }, [activeSelection, isAuthenticated, setActiveOrganizationId]);
+
+  useEffect(() => {
+    if (selectedOrganizationId) setActiveOrganizationId(selectedOrganizationId);
+  }, [selectedOrganizationId, setActiveOrganizationId]);
 
   useEffect(() => {
     void refreshOrganizations();
@@ -72,12 +89,13 @@ export const OrganizationWorkspaceProvider = ({ children, selectedOrganizationId
     () => ({
       organizations,
       currentOrganization,
-      activeOrganizationId: currentOrganization?.id ?? selectedOrganizationId ?? null,
+      activeOrganizationId: currentOrganization?.id ?? activeSelection ?? null,
       loading,
       error,
       refreshOrganizations,
+      setActiveOrganizationId,
     }),
-    [currentOrganization, error, loading, organizations, refreshOrganizations, selectedOrganizationId]
+    [activeSelection, currentOrganization, error, loading, organizations, refreshOrganizations, setActiveOrganizationId]
   );
 
   return <OrganizationWorkspaceContext.Provider value={value}>{children}</OrganizationWorkspaceContext.Provider>;

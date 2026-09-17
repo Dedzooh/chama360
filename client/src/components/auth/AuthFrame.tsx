@@ -15,17 +15,17 @@ interface AuthFrameProps {
 
 export const AuthFrame = ({ eyebrow = 'CHAMA360', title, subtitle, footer, icon, children }: AuthFrameProps) => {
   return (
-    <div className="auth-page auth-shell min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-6xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="hero-gradient flex flex-col justify-between overflow-hidden rounded-[var(--ds-radius-2xl)] p-6 text-white shadow-[var(--ds-shadow-floating)] sm:p-8">
-          <div className="max-w-xl">
+    <div className="auth-page auth-shell min-h-screen min-w-0 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full min-w-0 max-w-6xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <section className="hero-gradient flex min-w-0 flex-col justify-between overflow-hidden rounded-[var(--ds-radius-2xl)] p-6 text-white shadow-[var(--ds-shadow-floating)] sm:p-8">
+          <div className="max-w-xl min-w-0">
             <Link to={ROUTES.auth.splash} className="auth-brand-link" aria-label="Back to CHAMA360 welcome page">
               <BrandLockup className="auth-brand-lockup" label="CHAMA360" />
             </Link>
             <Badge tone="accent" className="mt-5 border-white/15 bg-white/10 text-white">
               {eyebrow}
             </Badge>
-            <h1 className="mt-5 text-4xl font-black leading-tight sm:text-5xl">{title}</h1>
+            <h1 className="mt-5 break-words text-4xl font-black leading-tight sm:text-5xl">{title}</h1>
             <p className="mt-4 max-w-2xl text-base text-white/84 sm:text-lg">{subtitle}</p>
           </div>
 
@@ -43,8 +43,8 @@ export const AuthFrame = ({ eyebrow = 'CHAMA360', title, subtitle, footer, icon,
           </div>
         </section>
 
-        <section className="flex flex-col justify-center">
-          <div className="auth-card overflow-hidden rounded-[var(--ds-radius-2xl)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] p-0 shadow-[var(--ds-shadow-elevated)]">
+        <section className="flex min-w-0 flex-col justify-center">
+          <div className="auth-card min-w-0 overflow-hidden rounded-[var(--ds-radius-2xl)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] p-0 shadow-[var(--ds-shadow-elevated)]">
             <div className="border-b border-[var(--ds-border)] bg-[var(--ds-surface-2)] px-6 py-5 sm:px-8">
               <div className="flex items-center gap-3">
                 {icon ? <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--ds-primary),var(--ds-secondary))] text-white shadow-[var(--ds-shadow-soft)]">{icon}</div> : null}

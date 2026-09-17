@@ -28,6 +28,7 @@ export const JoinInvite = () => {
     }
 
     localStorage.setItem(INVITE_STORAGE_KEY, shareableLink);
+    sessionStorage.setItem(INVITE_STORAGE_KEY, ROUTES.invitations.join(shareableLink));
 
     if (!isAuthenticated) {
       setLoading(false);
@@ -59,6 +60,7 @@ export const JoinInvite = () => {
       setError('');
       await chamaService.joinChama(inviteChama.id, shareableLink);
       localStorage.removeItem(INVITE_STORAGE_KEY);
+      sessionStorage.removeItem(INVITE_STORAGE_KEY);
       setSuccess('Join request submitted successfully.');
       setTimeout(() => navigate(ROUTES.app.myChamas), 1200);
     } catch (e: any) {

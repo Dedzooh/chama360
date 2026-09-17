@@ -12,12 +12,12 @@ const getLabel = (value: string) => {
   switch (value) {
     case 'home':
       return 'Home';
-    case 'members':
-      return 'Members';
-    case 'finance':
-      return 'Finance';
+    case 'pay':
+      return 'Pay';
     case 'welfare':
       return 'Welfare';
+    case 'activity':
+      return 'Activity';
     default:
       return 'More';
   }
@@ -25,27 +25,27 @@ const getLabel = (value: string) => {
 
 export const BottomNav = ({ activeOrganizationId, onMoreToggle, onQuickAction }: BottomNavProps) => {
   const location = useLocation();
-  const membersLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/members` : ROUTES.app.myChamas;
-  const financeLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/contributions` : ROUTES.app.myChamas;
+  const payLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/contributions` : ROUTES.app.myChamas;
   const welfareLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/welfare` : ROUTES.app.myChamas;
+  const activityLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/dashboard` : ROUTES.app.notifications;
 
   const items = [
     { value: 'home', to: ROUTES.app.home, icon: Home },
-    { value: 'members', to: membersLink, icon: Users },
-    { value: 'finance', to: financeLink, icon: Wallet },
+    { value: 'pay', to: payLink, icon: Wallet },
     { value: 'welfare', to: welfareLink, icon: Heart },
+    { value: 'activity', to: activityLink, icon: Users },
     { value: 'more', icon: Menu },
   ] as const;
 
   const activeValue =
     location.pathname === ROUTES.app.home || location.pathname === ROUTES.app.myChamas
       ? 'home'
-      : location.pathname.includes('/members')
-        ? 'members'
-        : location.pathname.includes('/contributions') || location.pathname.includes('/loans')
-          ? 'finance'
-          : location.pathname.includes('/welfare')
-            ? 'welfare'
+      : location.pathname.includes('/contributions') || location.pathname.includes('/loans')
+        ? 'pay'
+        : location.pathname.includes('/welfare')
+          ? 'welfare'
+          : location.pathname.includes('/notifications') || location.pathname.includes('/reports') || location.pathname.includes('/meetings')
+            ? 'activity'
             : 'more';
 
   return (

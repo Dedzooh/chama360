@@ -8,6 +8,7 @@ import { useAuthStore } from '../store/authStore';
 import { getApiErrorMessage } from '../utils/apiError';
 
 type Preview = Awaited<ReturnType<typeof organizationService.getInvitePreview>>;
+const PENDING_ORGANIZATION_INVITE = 'pending_organization_invite';
 
 export const JoinOrganizationInvite = () => {
   const { token } = useParams<{ token: string }>();
@@ -21,6 +22,9 @@ export const JoinOrganizationInvite = () => {
 
   useEffect(() => {
     if (!token) { setError('Invalid invitation link.'); setLoading(false); return; }
+    if (!isAuthenticated) {
+      sessionStorage.setItem(PENDING_ORGANIZATION_INVITE, ROUTES.invitations.organization(token));
+    }
     let active = true;
     organizationService.getInvitePreview(token)
       .then((result) => { if (active) setOrganization(result); })
@@ -35,6 +39,7 @@ export const JoinOrganizationInvite = () => {
     setError('');
     try {
       const membership = await organizationService.joinByInvite(token);
+      sessionStorage.removeItem(PENDING_ORGANIZATION_INVITE);
       if (membership.status === 'ACTIVE') {
         navigate(ROUTES.chama.dashboard(organization!.id), { replace: true });
       } else {
@@ -56,7 +61,7 @@ export const JoinOrganizationInvite = () => {
         <div><p className="text-sm text-[var(--ds-text-muted)]">{organization.organizationType.replaceAll('_', ' ')}</p><h2 className="text-xl font-black text-[var(--ds-secondary)]">{organization.name}</h2>{organization.description ? <p className="mt-2 text-sm">{organization.description}</p> : null}</div>
         {joined ? <p className="rounded-xl bg-emerald-50 p-4 text-emerald-800">Your request is with the group’s leaders for approval. <Link className="underline" to={ROUTES.app.myChamas}>View my groups</Link></p>
           : isAuthenticated ? <Button onClick={() => void requestToJoin()} loading={joining} className="w-full">Request to join free</Button>
-            : <div className="grid gap-3 sm:grid-cols-2"><Link className="btn btn-primary justify-center" to={ROUTES.auth.login} state={{ from: returnTo }}>Sign in to join</Link><Link className="btn btn-outline justify-center" to={ROUTES.auth.register} state={{ from: returnTo }}>Create account</Link></div>}
+            : <div className="space-y-3"><p className="rounded-xl bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">New to CHAMA360? Create your account first and we will bring you back here to join this Chama.</p><div className="grid gap-3 sm:grid-cols-2"><Link className="btn btn-primary justify-center" to={ROUTES.auth.login} state={{ from: returnTo }}>Sign in to join</Link><Link className="btn btn-outline justify-center" to={ROUTES.auth.register} state={{ from: returnTo }}>Create account</Link></div></div>}
       </> : null}
     </Card>
   </PublicPageFrame>;

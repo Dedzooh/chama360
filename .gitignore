@@ -94,6 +94,8 @@ client/public/downloads/*
 # Temporary folders
 tmp/
 temp/
+.tmp-pg-test/
+.tmp-pg-test/**
 
 # Logs
 logs

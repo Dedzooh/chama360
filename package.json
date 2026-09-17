@@ -8,6 +8,8 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "test": "jest",
+    "test:db:up": "docker compose --profile test up -d postgres-test redis",
+    "test:db:reset": "docker compose --profile test rm -sf postgres-test redis && docker compose --profile test up -d postgres-test redis",
     "test:offline": "jest --config jest.config.offline.js --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

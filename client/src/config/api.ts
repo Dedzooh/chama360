@@ -29,7 +29,7 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
     const requestUrl = typeof originalRequest?.url === 'string' ? originalRequest.url : '';
-    const isAuthenticationRequest = ['/auth/login', '/auth/register', '/auth/refresh'].some((path) => requestUrl.endsWith(path));
+    const isAuthenticationRequest = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/forgot-password', '/auth/reset-password'].some((path) => requestUrl.endsWith(path));
 
     if (error.response?.status === 402 && error.response?.data?.error?.code === 'UPGRADE_REQUIRED') {
       window.dispatchEvent(new CustomEvent('chama360:upgrade-required', { detail: error.response.data.error.details }));

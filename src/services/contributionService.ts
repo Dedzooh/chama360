@@ -36,6 +36,7 @@ import {
 } from '../types/notification';
 import { v4 as uuidv4 } from 'uuid';
 import { isOperationalChama } from '../utils/chamaLifecycle';
+import { LedgerService } from './ledgerService';
 
 // Initialize services
 const notificationService = new NotificationService(prisma);
@@ -384,9 +385,9 @@ export class ContributionService {
       throw new ConflictError('Payment already recorded with this transaction reference');
     }
 
-    // Update contribution and create transaction in a single database transaction
-    const [updatedContribution, transaction] = await prisma.$transaction([
-      prisma.contribution.update({
+    // Update contribution and post an idempotent ledger entry in a single database transaction
+    const [updatedContribution, transaction] = await prisma.$transaction(async (tx: any) => {
+      const updated = await tx.contribution.update({
         where: { id: data.contributionId },
         data: {
           status: newStatus,
@@ -396,13 +397,15 @@ export class ContributionService {
           penalties,
           updatedAt: new Date(),
         },
-      }),
-      prisma.transaction.create({
-        data: {
+      });
+
+      const ledgerTransaction = await LedgerService.recordContributionPayment(
+        { transaction: tx },
+        {
+          organizationId: contribution.organizationId ?? null,
           chamaId: contribution.chamaId,
-          type: TransactionType.CONTRIBUTION,
-          amount: finalAmount,
           fromMemberId: contribution.memberId,
+          amount: finalAmount,
           reference: `CONTRIB-${contribution.id}-${Date.now()}`,
           idempotencyKey,
           status: TransactionStatus.COMPLETED,
@@ -413,9 +416,11 @@ export class ContributionService {
             currencyConversion: conversionMetadata,
             recordedBy,
           },
-        },
-      }),
-    ]);
+        }
+      );
+
+      return [updated, ledgerTransaction];
+    });
 
     // Send notification to member
     await notificationService.createNotification({

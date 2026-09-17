@@ -9,7 +9,7 @@ import { Badge, Button, Card, Chip, ConfirmDialog, EmptyState, MemberCard, Searc
 import { OrganizationInviteLink } from '../components/OrganizationInviteLink';
 
 const roleOptionsFallback: OrganizationRoleRecord[] = [];
-const statusOptions = ['INVITATION_SENT', 'PENDING_APPROVAL', 'PENDING', 'ACTIVE', 'SUSPENDED', 'EXITED', 'ARCHIVED'] as const;
+const statusLabel = (status: string) => ({ INVITATION_SENT: 'Invited', PENDING_APPROVAL: 'Pending approval', PENDING: 'Pending', ACTIVE: 'Active', SUSPENDED: 'Suspended', EXITED: 'Exited', ARCHIVED: 'Archived' }[status] ?? status);
 
 export const Members = () => {
   const compactLayout = useCompactLayout();
@@ -26,7 +26,6 @@ export const Members = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRoleId, setInviteRoleId] = useState('');
-  const [inviteStatus, setInviteStatus] = useState<(typeof statusOptions)[number]>('PENDING_APPROVAL');
   const canManageMembers = ['OWNER', 'FOUNDER', 'ADMIN'].includes((currentOrganization?.myRole ?? '').toUpperCase());
 
   const loadData = async () => {
@@ -73,7 +72,7 @@ export const Members = () => {
       await organizationService.addMember(currentOrganization.id, {
         email: inviteEmail.trim().toLowerCase(),
         role: selectedRole?.name ?? 'MEMBER',
-        status: inviteStatus,
+        status: 'PENDING_APPROVAL',
       });
       setInviteEmail('');
       await loadData();
@@ -129,6 +128,7 @@ export const Members = () => {
   const pendingCount = members.filter((member) => member.status === 'PENDING' || member.status === 'PENDING_APPROVAL' || member.status === 'INVITATION_SENT').length;
   const approvalRequests = members.filter((member) => member.status === 'PENDING_APPROVAL');
   const suspendedCount = members.filter((member) => member.status === 'SUSPENDED').length;
+  const activeFounderCount = members.filter((member) => ['OWNER', 'FOUNDER'].includes(String(member.role).toUpperCase()) && member.status === 'ACTIVE').length;
 
   const mobileLayout = (
     <div className="space-y-4 md:hidden">
@@ -213,6 +213,7 @@ export const Members = () => {
             const currentRoleLabel = member.roleLabel ?? (typeof role === 'object' ? role?.label ?? role?.name : member.role);
             const canSuspend = member.status === 'ACTIVE';
             const canRestore = member.status === 'SUSPENDED' || member.status === 'EXITED' || member.status === 'ARCHIVED';
+            const isOnlyFounder = ['OWNER', 'FOUNDER'].includes(String(member.role).toUpperCase()) && activeFounderCount <= 1;
 
             return (
               <Card key={member.id} className="mobile-finance-card overflow-hidden p-0">
@@ -222,7 +223,7 @@ export const Members = () => {
                     name={`${member.user?.firstName ?? 'Member'} ${member.user?.lastName ?? ''}`.trim()}
                     role={String(currentRoleLabel ?? member.role)}
                     email={member.user?.email ?? 'No email'}
-                    status={String(member.status)}
+                    status={statusLabel(String(member.status))}
                   />
 
                   {canManageMembers ? <div className="mt-4 grid gap-3">
@@ -250,20 +251,16 @@ export const Members = () => {
                         disabled={saving}
                         className="input w-full"
                       >
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
+                        <option value={member.status}>{statusLabel(String(member.status))}</option>
                       </select>
                     </label>
 
                     <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" disabled={saving} onClick={() => setMemberToRemove(member)} startIcon={<Trash2 className="h-4 w-4" />}>
+                      <Button variant="outline" disabled={saving || isOnlyFounder} onClick={() => setMemberToRemove(member)} startIcon={<Trash2 className="h-4 w-4" />}>
                         Remove
                       </Button>
                       {canSuspend ? (
-                        <Button variant="outline" disabled={saving} onClick={() => void updateMember(member, currentRoleId, 'SUSPENDED')} startIcon={<Archive className="h-4 w-4" />}>
+                        <Button variant="outline" disabled={saving || isOnlyFounder} onClick={() => void updateMember(member, currentRoleId, 'SUSPENDED')} startIcon={<Archive className="h-4 w-4" />}>
                           Suspend
                         </Button>
                       ) : canRestore ? (
@@ -300,16 +297,7 @@ export const Members = () => {
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Status</span>
-              <select value={inviteStatus} onChange={(event) => setInviteStatus(event.target.value as (typeof statusOptions)[number])} className="input w-full">
-                {statusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <p className="rounded-xl bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">New members are automatically marked <strong>Pending approval</strong>. Approve them from the join requests list.</p>
             <Button type="submit" loading={saving} className="w-full" startIcon={!saving ? <UserPlus className="h-4 w-4" /> : undefined}>
               Add member
             </Button>
@@ -425,6 +413,7 @@ export const Members = () => {
               const currentRoleLabel = member.roleLabel ?? (typeof role === 'object' ? role?.label ?? role?.name : member.role);
               const canSuspend = member.status === 'ACTIVE';
               const canRestore = member.status === 'SUSPENDED' || member.status === 'EXITED' || member.status === 'ARCHIVED';
+              const isOnlyFounder = ['OWNER', 'FOUNDER'].includes(String(member.role).toUpperCase()) && activeFounderCount <= 1;
 
               return (
                 <Card key={member.id} className="p-4">
@@ -461,20 +450,16 @@ export const Members = () => {
                           disabled={saving}
                           className="mt-1 w-full input"
                         >
-                          {statusOptions.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
+                          <option value={member.status}>{statusLabel(String(member.status))}</option>
                         </select>
                       </label>
 
                       <div className="flex items-end gap-2">
-                        <Button variant="outline" disabled={saving} onClick={() => setMemberToRemove(member)} startIcon={<Trash2 className="h-4 w-4" />}>
+                        <Button variant="outline" disabled={saving || isOnlyFounder} onClick={() => setMemberToRemove(member)} startIcon={<Trash2 className="h-4 w-4" />}>
                           Remove
                         </Button>
                         {canSuspend ? (
-                          <Button variant="outline" disabled={saving} onClick={() => void updateMember(member, currentRoleId, 'SUSPENDED')} startIcon={<Archive className="h-4 w-4" />}>
+                          <Button variant="outline" disabled={saving || isOnlyFounder} onClick={() => void updateMember(member, currentRoleId, 'SUSPENDED')} startIcon={<Archive className="h-4 w-4" />}>
                             Suspend
                           </Button>
                         ) : null}
@@ -511,23 +496,14 @@ export const Members = () => {
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Status</span>
-              <select value={inviteStatus} onChange={(event) => setInviteStatus(event.target.value as (typeof statusOptions)[number])} className="input w-full">
-                {statusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <p className="rounded-xl bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)] md:col-span-2">New members are automatically marked <strong>Pending approval</strong>. Approve them from the join requests list.</p>
             <div className="flex items-end">
               <Button type="submit" loading={saving} className="w-full" startIcon={!saving ? <UserPlus className="h-4 w-4" /> : undefined}>
                 Add member
               </Button>
             </div>
           </form>
-          <p className="mt-3 text-sm text-[var(--ds-text-muted)]">Adding by email uses the current organization roles already defined on the backend.</p>
+          <p className="mt-3 text-sm text-[var(--ds-text-muted)]">For the fastest onboarding, share the invitation link above. Email adds are for existing CHAMA360 accounts and start as Pending approval.</p>
         </div>
       </section> : null}
       </div>}

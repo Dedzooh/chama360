@@ -12,7 +12,7 @@ import { useSubscriptionStore } from '../store/subscriptionStore';
 
 export const ReviewSetupStep = () => {
   const { draft, resetDraft } = useWizardContext();
-  const { refreshOrganizations } = useOrganizationWorkspace();
+  const { refreshOrganizations, setActiveOrganizationId } = useOrganizationWorkspace();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +58,11 @@ export const ReviewSetupStep = () => {
         },
       });
 
+      setActiveOrganizationId(organization.id);
       try { await refreshOrganizations(); } catch { /* The organization is already saved; My Chamas will retry loading it. */ }
       await useSubscriptionStore.getState().setOrganization(organization.id);
       resetDraft();
-      navigate(ROUTES.chama.members(organization.id), { replace: true, state: { createdOrganizationId: organization.id, createdOrganizationName: organization.name, requiredPlan } });
+      navigate(ROUTES.chama.dashboard(organization.id), { replace: true, state: { createdOrganizationId: organization.id, createdOrganizationName: organization.name, requiredPlan } });
     } catch (createError) {
       setError(getApiErrorMessage(createError, 'Unable to create this Chama. Check the details and try again.'));
     } finally {

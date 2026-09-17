@@ -12,6 +12,7 @@ import {
   Heart,
   Megaphone,
   Plus,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
   TrendingUp,
@@ -67,7 +68,7 @@ const LoadingStat = () => (
 export const Dashboard = () => {
   const compactLayout = useCompactLayout();
   const { organizationId } = useParams();
-  const { organizations, currentOrganization, loading, error } = useOrganizationWorkspace();
+  const { organizations, currentOrganization, loading, error, refreshOrganizations } = useOrganizationWorkspace();
   const userFirstName = useAuthStore((state) => state.user?.firstName ?? 'there');
   const userId = useAuthStore((state) => state.user?.id);
   const [recentActivity, setRecentActivity] = useState<Array<{ title: string; detail: string; time: string }>>([]);
@@ -78,6 +79,8 @@ export const Dashboard = () => {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [claims, setClaims] = useState<WelfareClaimRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
+  const [signalsLoading, setSignalsLoading] = useState(false);
+  const [signalsError, setSignalsError] = useState('');
   const organization = currentOrganization;
   const isWorkspace = Boolean(organizationId);
   const memberCount = organization?.members?.length ?? 0;
@@ -89,6 +92,7 @@ export const Dashboard = () => {
   const currentRoleName = (organization?.myRole ?? 'MEMBER').toUpperCase();
   const currentRoleAccess = roleAccess[currentRoleName] ?? roleAccess.MEMBER;
   const canRecordContributions = ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'].includes(currentRoleName);
+  const enabledModules = organization?.enabledModules ?? {};
 
   useEffect(() => {
     let active = true;
@@ -103,10 +107,13 @@ export const Dashboard = () => {
         setLoans([]);
         setClaims([]);
         setMeetings([]);
+        setSignalsError('');
         return;
       }
 
       setMyRecordsAvailable(false);
+      setSignalsLoading(true);
+      setSignalsError('');
 
       try {
         const [logRecords, meetingRecords, contributionRecords, loanRecords, claimRecords] = await Promise.all([
@@ -137,6 +144,7 @@ export const Dashboard = () => {
         setUpcomingMeetingRecord(nextMeeting ?? null);
       } catch {
         if (active) {
+          setSignalsError('Some dashboard updates could not be loaded.');
           setRecentActivity([]);
           setUpcomingMeeting(null);
           setUpcomingMeetingRecord(null);
@@ -146,6 +154,8 @@ export const Dashboard = () => {
           setClaims([]);
           setMeetings([]);
         }
+      } finally {
+        if (active) setSignalsLoading(false);
       }
     };
 
@@ -200,6 +210,9 @@ export const Dashboard = () => {
       <Card className="p-6">
         <p className="font-bold">Dashboard unavailable</p>
         <p className="mt-2 text-sm">{error}</p>
+        <Button className="mt-4" onClick={() => void refreshOrganizations()} startIcon={<RefreshCw className="h-4 w-4" />}>
+          Try again
+        </Button>
       </Card>
     );
   }
@@ -223,6 +236,44 @@ export const Dashboard = () => {
     );
   }
 
+  const organizationMetadata = (organization?.metadata ?? {}) as { contributionRules?: unknown; welfareRules?: { categories?: Array<{ enabled?: boolean }> }; paymentSettings?: { isEnabled?: boolean } };
+  const setupSteps = organization ? [
+    { label: 'Welfare created', complete: true, to: ROUTES.chama.dashboard(organization.id) },
+    { label: 'Founder account created', complete: true, to: ROUTES.app.profile },
+    { label: 'Add officials', complete: memberCount > 1, to: ROUTES.chama.members(organization.id) },
+    { label: 'Invite members', complete: memberCount > 1, to: ROUTES.chama.members(organization.id) },
+    { label: 'Set contribution amount', complete: Boolean(organizationMetadata.contributionRules), to: ROUTES.chama.contributions(organization.id) },
+    { label: 'Configure welfare benefits and claims', complete: Boolean(organizationMetadata.welfareRules?.categories?.some((category) => category.enabled)), to: ROUTES.chama.settings(organization.id) },
+    { label: 'Configure M-Pesa', complete: Boolean(organizationMetadata.paymentSettings?.isEnabled), to: ROUTES.chama.settings(organization.id) },
+  ] : [];
+  const setupComplete = setupSteps.filter((step) => step.complete).length;
+  const nextSetupStep = setupSteps.find((step) => !step.complete) ?? setupSteps[setupSteps.length - 1];
+
+  if (organization?.status === 'DRAFT') {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        <Card className="overflow-hidden border-emerald-200 bg-[linear-gradient(135deg,#effaf6,#f8fbff)] p-6 sm:p-8">
+          <p className="text-sm font-bold uppercase tracking-[0.18em] text-[var(--ds-primary)]">Chama setup</p>
+          <h1 className="mt-3 text-3xl font-black text-[var(--ds-secondary)] sm:text-4xl">Welcome to {organization.name}</h1>
+          <p className="mt-3 max-w-2xl text-[var(--ds-text-muted)]">Your {organization.chamaType?.toLowerCase() ?? 'Chama'} has been created. Complete these steps before going live.</p>
+          <div className="mt-6 flex items-end justify-between gap-4"><div><p className="text-sm font-semibold text-[var(--ds-text-muted)]">Setup progress</p><p className="mt-1 text-2xl font-black text-[var(--ds-secondary)]">{setupComplete}/{setupSteps.length} complete</p></div><span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-900">Draft</span></div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-[var(--ds-primary)] transition-all" style={{ width: `${(setupComplete / setupSteps.length) * 100}%` }} /></div>
+        </Card>
+        <Card className="p-5 sm:p-6">
+          <div className="space-y-2">
+            {setupSteps.map((step) => (
+              <Link key={step.label} to={step.to} className="flex items-center gap-3 rounded-xl px-3 py-3 transition hover:bg-[var(--ds-surface-2)]">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-black ${step.complete ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{step.complete ? '✓' : '○'}</span>
+                <span className={step.complete ? 'text-[var(--ds-text-muted)] line-through' : 'font-semibold text-[var(--ds-secondary)]'}>{step.label}</span>
+              </Link>
+            ))}
+          </div>
+          <Link to={nextSetupStep.to} className="btn btn-primary mt-6 inline-flex w-full justify-center sm:w-auto">Continue setup <ArrowRight className="h-4 w-4" /></Link>
+        </Card>
+      </div>
+    );
+  }
+
   const sparkData = [8, 12, 15, 11, 18, 22, 19, 28, 25, 31];
   const recentTransactions = contributions.slice(0, 4);
   const paidContributionTotal = contributions
@@ -232,7 +283,6 @@ export const Dashboard = () => {
     .filter((item) => item.status === 'PENDING' || item.status === 'ACTIVE' || item.status === 'APPROVED')
     .reduce((sum, item) => sum + Number(item.balance ?? item.amountApproved ?? item.amountRequested ?? 0), 0);
   const nextMeeting = upcomingMeetingRecord;
-  const enabledModules = organization?.enabledModules ?? {};
   const canManageChama = ['OWNER', 'FOUNDER', 'ADMIN'].includes(currentRoleName);
   const canManagePayments = ['OWNER', 'FOUNDER', 'ADMIN', 'TREASURER'].includes(currentRoleName);
   const mobileQuickActions = [
@@ -249,7 +299,7 @@ export const Dashboard = () => {
   ];
   const dashboardStats = [
     { label: 'Contributions', value: formatMoney(paidContributionTotal, currency), caption: `${paidContributionCount} received`, icon: ArrowDownCircle, tone: 'green' },
-    { label: 'Loan approvals', value: pendingLoanCount.toString(), caption: 'Pending', icon: Wallet, tone: 'blue' },
+    ...(enabledModules.loans ? [{ label: 'Loan approvals', value: pendingLoanCount.toString(), caption: 'Pending', icon: Wallet, tone: 'blue' as const }] : []),
     { label: 'Welfare claims', value: pendingClaimCount.toString(), caption: `${totalClaimCount} total`, icon: Heart, tone: 'pink' },
     { label: 'Meetings', value: meetings.length.toString(), caption: nextMeeting ? formatDateLabel(nextMeeting.dateTime) : 'None scheduled', icon: CalendarDays, tone: 'gold' },
   ] as const;
@@ -349,7 +399,7 @@ export const Dashboard = () => {
               </span>
               <p>Exposure</p>
               <strong>{formatMoney(pendingLoanValue, currency)}</strong>
-              <small>{pendingLoanCount} pending loans</small>
+              <small>{enabledModules.loans ? `${pendingLoanCount} pending loans` : 'Welfare-focused workspace'}</small>
             </article>
           </section>
 
@@ -416,8 +466,20 @@ export const Dashboard = () => {
               <h2>Recent Activity</h2>
               <Link to={ROUTES.chama.reports(organization.id)}>View all</Link>
             </div>
+            {signalsError ? (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[var(--ds-radius-lg)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+                <span>{signalsError}</span>
+                <Button variant="outline" onClick={() => window.location.reload()} startIcon={<RefreshCw className="h-4 w-4" />}>Retry</Button>
+              </div>
+            ) : null}
             <div className="chama360-activity-list chama360-dashboard-activity-list">
-              {recentDashboardActivity.length ? (
+              {signalsLoading ? (
+                <div className="space-y-3 rounded-[var(--ds-radius-lg)] bg-[var(--ds-surface-2)] p-4">
+                  <div className="loading-line w-3/4" />
+                  <div className="loading-line w-1/2" />
+                  <div className="loading-line w-2/3" />
+                </div>
+              ) : recentDashboardActivity.length ? (
                 recentDashboardActivity.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -563,7 +625,7 @@ export const Dashboard = () => {
           <MetricCard title="Members" value={memberCount.toString()} caption="Current active membership" tone="navy" icon={<Users className="h-5 w-5" />} />
           <MetricCard title="Modules" value={enabledModuleCount.toString()} caption={readonly ? 'Read only' : 'Operational'} tone="gold" icon={<ClipboardList className="h-5 w-5" />} />
           <MetricCard title="Contributions" value={`${paidContributionCount}/${contributions.length}`} caption={`${pendingContributionCount} pending`} tone="info" icon={<CalendarDays className="h-5 w-5" />} />
-          <MetricCard title="Loans" value={activeLoanCount.toString()} caption={`${pendingLoanCount} waiting`} tone="warning" icon={<Archive className="h-5 w-5" />} />
+          {enabledModules.loans ? <MetricCard title="Loans" value={activeLoanCount.toString()} caption={`${pendingLoanCount} waiting`} tone="warning" icon={<Archive className="h-5 w-5" />} /> : null}
           <MetricCard title="Welfare" value={`${pendingClaimCount}/${totalClaimCount}`} caption="Claims in motion" tone="error" icon={<Heart className="h-5 w-5" />} />
         </section>
       ) : null}
@@ -683,7 +745,7 @@ export const Dashboard = () => {
             <p className="text-sm text-[var(--ds-text-muted)]">Quick actions</p>
             <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Fast access</h2>
             <div className="mt-5 space-y-3">
-              <QuickAction label="Open loans" description="Review approvals and balances." icon={<Archive className="h-5 w-5" />} />
+              {enabledModules.loans ? <QuickAction label="Open loans" description="Review approvals and balances." icon={<Archive className="h-5 w-5" />} /> : null}
               <QuickAction label="Meetings" description="Plan the next gathering." icon={<CalendarDays className="h-5 w-5" />} />
               <QuickAction label="Welfare claims" description="Handle support requests." icon={<Heart className="h-5 w-5" />} />
             </div>

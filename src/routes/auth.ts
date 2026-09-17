@@ -576,7 +576,7 @@ router.post('/forgot-password', asyncHandler(async (req: Request, res: Response)
   // Find user
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { id: true, email: true, isActive: true },
+    select: { id: true, email: true, firstName: true, isActive: true },
   });
 
   // Always return success to prevent email enumeration
@@ -587,7 +587,7 @@ router.post('/forgot-password', asyncHandler(async (req: Request, res: Response)
     return;
   }
 
-  const resetToken = AuthService.generateSecureToken();
+  const resetToken = generateVerificationCode();
   const resetRequest: PasswordResetRequest = {
     userId: user.id,
     email: user.email,
@@ -595,10 +595,22 @@ router.post('/forgot-password', asyncHandler(async (req: Request, res: Response)
   };
 
   await RedisService.set(`${PASSWORD_RESET_PREFIX}${AuthService.fingerprintToken(resetToken)}`, resetRequest, PASSWORD_RESET_TTL_SECONDS);
+
+  let resetDelivery: 'SENT' | 'PROVIDER_NOT_CONFIGURED' = 'SENT';
+  try {
+    await NotificationService.sendPasswordReset(user.email, user.firstName, resetToken);
+  } catch (error) {
+    resetDelivery = 'PROVIDER_NOT_CONFIGURED';
+    logger.warn('Password reset code could not be delivered', {
+      userId: user.id,
+      reason: error instanceof Error ? error.message : 'Unknown delivery error',
+    });
+  }
   
   logger.info('Password reset requested', {
     userId: user.id,
     email: user.email,
+    resetDelivery,
     resetToken: isProduction ? undefined : resetToken,
   });
 
