@@ -333,15 +333,33 @@ export class ContributionService {
       });
     }
 
-    // Determine new status based on payment amount
-    let newStatus: ContributionStatus;
-    const totalPaid = Number(contribution.amount) - Number(contribution.penalties);
-    
-    if (finalAmount >= totalPaid) {
-      newStatus = ContributionStatus.PAID;
-    } else {
-      newStatus = ContributionStatus.PARTIAL;
+    if (contribution.status === ContributionStatus.PAID) {
+      throw new ConflictError('Contribution has already been fully paid');
     }
+
+    const completedPayments = await prisma.transaction.findMany({
+      where: {
+        chamaId: contribution.chamaId,
+        fromMemberId: contribution.memberId,
+        type: TransactionType.CONTRIBUTION,
+        status: TransactionStatus.COMPLETED,
+      },
+      select: { amount: true, metadata: true },
+    });
+    const amountAlreadyPaid = completedPayments.reduce((total: number, payment: any) => {
+      const metadata = payment.metadata as { contributionId?: string } | null;
+      return metadata?.contributionId === contribution.id ? total + Number(payment.amount) : total;
+    }, 0);
+    const amountDue = Number(contribution.amount) - Number(contribution.penalties);
+    const remainingAmount = Math.max(0, amountDue - amountAlreadyPaid);
+
+    if (finalAmount > remainingAmount) {
+      throw new BadRequestError(`Payment exceeds the remaining contribution balance of ${remainingAmount.toFixed(2)}`);
+    }
+
+    const newStatus: ContributionStatus = finalAmount >= remainingAmount
+      ? ContributionStatus.PAID
+      : ContributionStatus.PARTIAL;
 
     // Check if payment is late and calculate penalties if needed
     const now = new Date();

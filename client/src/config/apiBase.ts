@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 
-const FALLBACK_WEB_API_URL = 'http://localhost:3000/api/v1';
+const FALLBACK_WEB_API_URL = '/api/v1';
 const FALLBACK_ANDROID_API_URL = 'http://10.0.2.2:3000/api/v1';
 const loopbackHosts = new Set(['localhost', '127.0.0.1', '::1']);
 

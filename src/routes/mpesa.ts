@@ -295,6 +295,10 @@ router.post('/reconcile/bulk',
     }
 
     const bulkData = bulkReconciliationSchema.parse(req.body);
+    const chamaId = req.currentChama?.id;
+    if (!chamaId) {
+      throw new ForbiddenError('Chama context required');
+    }
 
     const successful: string[] = [];
     const failed: { mpesaReceiptNumber: string; error: string }[] = [];
@@ -309,6 +313,9 @@ router.post('/reconcile/bulk',
         if (!contribution) {
           throw new Error('Contribution not found');
         }
+        if (contribution.chamaId !== chamaId) {
+          throw new ForbiddenError('Contribution does not belong to the selected Chama');
+        }
 
         // Check if payment already exists
         const existingTransaction = await prisma.transaction.findFirst({
@@ -321,36 +328,37 @@ router.post('/reconcile/bulk',
           throw new Error('Payment already reconciled');
         }
 
-        // Create transaction and record payment
-        await prisma.transaction.create({
-          data: {
-            chamaId: contribution.chamaId,
-            type: 'CONTRIBUTION',
-            amount: payment.amount,
-            fromMemberId: contribution.memberId,
-            reference: `MPESA-${payment.mpesaReceiptNumber}`,
-            idempotencyKey: payment.mpesaReceiptNumber,
-            status: TransactionStatus.COMPLETED,
-            metadata: {
-              mpesaReceiptNumber: payment.mpesaReceiptNumber,
-              phoneNumber: payment.phoneNumber,
-              transactionDate: payment.transactionDate,
-              paymentMethod: 'MPESA',
-              bulkReconciliation: true,
-              reconciledBy: req.user.id,
+        await prisma.$transaction(async (tx) => {
+          await tx.transaction.create({
+            data: {
+              chamaId: contribution.chamaId,
+              type: 'CONTRIBUTION',
+              amount: payment.amount,
+              fromMemberId: contribution.memberId,
+              reference: `MPESA-${payment.mpesaReceiptNumber}`,
+              idempotencyKey: payment.mpesaReceiptNumber,
+              status: TransactionStatus.COMPLETED,
+              metadata: {
+                contributionId: contribution.id,
+                mpesaReceiptNumber: payment.mpesaReceiptNumber,
+                phoneNumber: payment.phoneNumber,
+                transactionDate: payment.transactionDate,
+                paymentMethod: 'MPESA',
+                bulkReconciliation: true,
+                reconciledBy: req.user.id,
+              },
             },
-          },
-        });
+          });
 
-        // Update contribution
-        await prisma.contribution.update({
-          where: { id: payment.contributionId },
-          data: {
-            status: 'PAID',
-            paidDate: new Date(payment.transactionDate),
-            paymentMethod: 'MPESA',
-            transactionRef: payment.mpesaReceiptNumber,
-          },
+          await tx.contribution.update({
+            where: { id: payment.contributionId },
+            data: {
+              status: 'PAID',
+              paidDate: new Date(payment.transactionDate),
+              paymentMethod: 'MPESA',
+              transactionRef: payment.mpesaReceiptNumber,
+            },
+          });
         });
 
         successful.push(payment.mpesaReceiptNumber);

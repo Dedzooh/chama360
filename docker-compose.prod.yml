@@ -50,6 +50,7 @@ services:
       dockerfile: Dockerfile.web
       args:
         VITE_API_URL: /api/v1
+        VITE_ANDROID_API_URL: http://15.235.33.47/api/v1
     restart: unless-stopped
     depends_on:
       app:

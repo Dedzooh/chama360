@@ -28,19 +28,19 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const requestUrl = typeof originalRequest?.url === 'string' ? originalRequest.url : '';
+    const isAuthenticationRequest = ['/auth/login', '/auth/register', '/auth/refresh'].some((path) => requestUrl.endsWith(path));
 
     if (error.response?.status === 402 && error.response?.data?.error?.code === 'UPGRADE_REQUIRED') {
       window.dispatchEvent(new CustomEvent('chama360:upgrade-required', { detail: error.response.data.error.details }));
     }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !isAuthenticationRequest && !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {
         const refreshToken = useAuthStore.getState().refreshToken;
-        if (!refreshToken) {
-          throw new Error('No refresh token available');
-        }
+        if (!refreshToken) return Promise.reject(error);
 
         const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
           refreshToken,

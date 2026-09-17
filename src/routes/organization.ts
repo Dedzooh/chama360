@@ -881,8 +881,19 @@ router.patch(
     }
 
     const payload = memberUpdateSchema.parse(req.body);
+    const existingMember = await db.organizationMember.findFirst({
+      where: { id: memberId, organizationId: id },
+    });
+    if (!existingMember) throw new NotFoundError('Organization member not found');
+
+    if (payload.roleId) {
+      const role = await db.organizationRole.findFirst({
+        where: { id: payload.roleId, organizationId: id },
+      });
+      if (!role) throw new BadRequestError('Role does not belong to this organization');
+    }
+
     if (payload.status === 'ACTIVE') {
-      const existingMember = await db.organizationMember.findUnique({ where: { id: memberId } });
       if (existingMember?.status !== 'ACTIVE') await requireMemberCapacity(id);
     }
     const member = await db.organizationMember.update({
@@ -925,7 +936,13 @@ router.delete(
       throw new ForbiddenError('Archived organizations are read-only');
     }
 
-    await db.organizationMember.delete({ where: { id: memberId } });
+    const member = await db.organizationMember.findFirst({
+      where: { id: memberId, organizationId: id },
+      select: { id: true },
+    });
+    if (!member) throw new NotFoundError('Organization member not found');
+
+    await db.organizationMember.delete({ where: { id: member.id } });
 
     await writeOrganizationAudit({
       organizationId: id,
