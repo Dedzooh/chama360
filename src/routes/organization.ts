@@ -67,7 +67,7 @@ const contributionCreateSchema = z.object({
   memberId: z.string().cuid(),
   amount: z.number().positive(),
   contributionType: z.string().min(1),
-  period: z.string().min(1).optional(),
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Period must be a valid YYYY-MM month').optional(),
   paymentMethod: z.enum(['CASH', 'MPESA', 'BANK']),
   reference: z.string().min(1).optional(),
   status: z.enum(['PENDING', 'PAID']).default('PAID'),
@@ -253,7 +253,7 @@ function canManageOrganizationLifecycle(membership: Awaited<ReturnType<typeof ge
 async function requireOrganizationStatus(organizationId: string) {
   const organization = await db.organization.findUnique({
     where: { id: organizationId },
-    select: { id: true, status: true, chama: { select: { id: true } }, settings: { select: { loanRules: true } } },
+    select: { id: true, status: true, metadata: true, chama: { select: { id: true } }, settings: { select: { loanRules: true, contributionRules: true } } },
   });
 
   if (!organization) {
@@ -447,9 +447,9 @@ router.post(
       await tx.organizationSettings.create({
         data: {
           organizationId: created.id,
-          contributionRules: {},
-          welfareRules: {},
-          loanRules: {},
+          contributionRules: (payload.metadata as any)?.contributionRules ?? {},
+          welfareRules: (payload.metadata as any)?.welfareRules ?? {},
+          loanRules: (payload.metadata as any)?.loanRules ?? {},
           notificationRules: {},
           securityRules: {},
         },
@@ -974,12 +974,20 @@ router.post(
       }
     }
     const paidAt = payload.status === 'PAID' ? (payload.paidAt ? new Date(payload.paidAt) : new Date()) : null;
+    const settingsRules = currentOrganization.settings?.contributionRules as any;
+    const savedRules = settingsRules && Object.keys(settingsRules).length ? settingsRules : (currentOrganization.metadata as any)?.contributionRules;
+    const rawDueDay = Number(savedRules?.deadlineDay ?? savedRules?.dueDate?.slice(8, 10) ?? 10);
+    const [periodYear = Number.NaN, periodMonth = Number.NaN] = (payload.period ?? '').split('-').map(Number);
+    const dueDay = Number.isInteger(rawDueDay) ? Math.min(Math.max(rawDueDay, 1), 31) : 10;
+    const dueDate = Number.isInteger(periodYear) && Number.isInteger(periodMonth) && periodMonth >= 1 && periodMonth <= 12
+      ? new Date(Date.UTC(periodYear, periodMonth - 1, Math.min(dueDay, new Date(Date.UTC(periodYear, periodMonth, 0)).getUTCDate())))
+      : new Date();
     const contribution = await runFinancialTransaction(async (tx: any) => {
       const created = await tx.contribution.create({ data: {
         chamaId: linkedChamaId, organizationId: id, memberId: payload.memberId, amount: payload.amount,
         contributionType: payload.contributionType, period: payload.period, paymentMethod: payload.paymentMethod as any,
         reference: payload.reference, recordedById: req.user!.id as string, status: payload.status as any,
-        paidAt, paidDate: paidAt, dueDate: payload.period ? new Date(`${payload.period}-01T00:00:00.000Z`) : new Date(),
+        paidAt, paidDate: paidAt, dueDate,
       } });
       if (payload.status === 'PAID') {
         const reference = payload.reference || `CONTRIBUTION-${created.id}`;

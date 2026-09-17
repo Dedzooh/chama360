@@ -26,20 +26,22 @@ export const Contributions = () => {
   const user = useAuthStore((state) => state.user);
   const paymentSettings = (currentOrganization?.metadata as { paymentSettings?: { mode?: string; mpesaNumber?: string; paybillNumber?: string; accountNumber?: string; accountReference?: string; transactionDesc?: string; isEnabled?: boolean } } | undefined)?.paymentSettings;
   const organizationSettings = (currentOrganization as { settings?: { contributionRules?: Record<string, any>; notificationRules?: Record<string, any> } } | null)?.settings;
-  const contributionRules = organizationSettings?.contributionRules ?? {};
+  const settingsContributionRules = organizationSettings?.contributionRules ?? {};
+  const contributionRules = Object.keys(settingsContributionRules).length ? settingsContributionRules : (currentOrganization?.metadata as { contributionRules?: Record<string, any> } | undefined)?.contributionRules ?? {};
   const notificationRules = organizationSettings?.notificationRules ?? {};
   const [summary, setSummary] = useState<ContributionSummary | null>(null);
   const [contributions, setContributions] = useState<ContributionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState('');
   const [memberId, setMemberId] = useState('');
   const [amount, setAmount] = useState('');
   const [contributionType, setContributionType] = useState('MONTHLY');
   const [period, setPeriod] = useState(() => new Date().toISOString().slice(0, 7));
   const [paymentMethod, setPaymentMethod] = useState(paymentSettings?.isEnabled ? 'MPESA' : 'CASH');
   const [reference, setReference] = useState('');
-  const [contributionStatus, setContributionStatus] = useState<'PAID' | 'PENDING'>('PAID');
+  const [contributionStatus, setContributionStatus] = useState<'PAID' | 'PENDING'>('PENDING');
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'paid' | 'pending' | 'reversed'>('all');
   const [actionContribution, setActionContribution] = useState<ContributionRecord | null>(null);
   const [actionMode, setActionMode] = useState<'mark-paid' | 'reverse' | null>(null);
@@ -56,7 +58,22 @@ export const Contributions = () => {
   const memberPaymentReference = `${memberReferencePrefix}${memberReferenceSuffix}`.slice(0, 12);
 
   const members = currentOrganization?.members ?? [];
+  const activeMembers = members.filter((member) => member.status === 'ACTIVE');
   const canRecord = useMemo(() => financeRoles.includes((currentOrganization?.myRole ?? '').toUpperCase()), [currentOrganization?.myRole]);
+
+  useEffect(() => {
+    const configuredAmount = Number(contributionRules.amount ?? 0);
+    setAmount(configuredAmount > 0 ? String(configuredAmount) : '');
+    setMemberId('');
+    setContributionStatus('PENDING');
+    setSaveMessage('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrganization?.id]);
+
+  useEffect(() => {
+    if (activeMembers.length === 1) setMemberId((selected) => selected || activeMembers[0].userId || activeMembers[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrganization?.id, activeMembers.length]);
 
   const loadData = async () => {
     if (!currentOrganization?.id) return;
@@ -88,8 +105,17 @@ export const Contributions = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!currentOrganization?.id) return;
+    if (!memberId || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !period) {
+      setError('Choose an active member, enter an amount above zero, and select a month.');
+      return;
+    }
+    if (contributionStatus === 'PAID' && paymentMethod !== 'CASH' && !reference.trim()) {
+      setError('Enter the M-Pesa or bank reference before marking this contribution paid.');
+      return;
+    }
     setSaving(true);
     setError(null);
+    setSaveMessage('');
     try {
       await organizationService.createContribution(currentOrganization.id, {
         memberId,
@@ -107,6 +133,7 @@ export const Contributions = () => {
       setPeriod(new Date().toISOString().slice(0, 7));
       await loadData();
       await refreshOrganizations();
+      setSaveMessage(contributionStatus === 'PAID' ? 'Payment recorded. The member can now see it in their records.' : 'Contribution created as due. Mark it paid only after you confirm payment.');
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Failed to record contribution');
     } finally {
@@ -552,29 +579,31 @@ export const Contributions = () => {
           {canRecord ? <form onSubmit={handleSubmit} className="space-y-4">
             <SelectField label="Member" value={memberId} onChange={(event) => setMemberId(event.target.value)}>
               <option value="">Select member</option>
-              {members.map((member) => (
+              {activeMembers.map((member) => (
                 <option key={member.id} value={member.userId ?? member.id}>
                   {member.user?.firstName} {member.user?.lastName}
                 </option>
               ))}
             </SelectField>
             <div className="grid gap-4 sm:grid-cols-2">
-              <TextField label="Amount" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} />
+              <TextField label="Amount (KES)" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} />
               <TextField label="Period" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField label="Type" value={contributionType} onChange={(event) => setContributionType(event.target.value)} />
-              <SelectField label="Member payment status" value={contributionStatus} onChange={(event) => setContributionStatus(event.target.value as 'PAID' | 'PENDING')}><option value="PAID">Paid</option><option value="PENDING">Not paid / Due</option></SelectField>
-              <SelectField label="Payment method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+              <SelectField label="Has the money been received?" value={contributionStatus} onChange={(event) => setContributionStatus(event.target.value as 'PAID' | 'PENDING')}><option value="PENDING">No — record as due</option><option value="PAID">Yes — record payment</option></SelectField>
+              {contributionStatus === 'PAID' ? <SelectField label="Payment method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
                 <option value="CASH">Cash</option>
                 <option value="MPESA">M-Pesa</option>
                 <option value="BANK">Bank</option>
-              </SelectField>
+              </SelectField> : null}
             </div>
-            <TextField label="Reference" value={reference} onChange={(event) => setReference(event.target.value)} />
+            {contributionStatus === 'PAID' ? <TextField label={paymentMethod === 'CASH' ? 'Receipt reference (optional)' : 'Transaction reference'} value={reference} onChange={(event) => setReference(event.target.value)} /> : null}
+            <p className="text-sm text-[var(--ds-text-muted)]">A due entry does not increase the group wallet. Confirm payment before marking it paid.</p>
             <Button type="submit" loading={saving} startIcon={!saving ? <Plus className="h-4 w-4" /> : undefined} className="w-full">
-              Record contribution
+              {contributionStatus === 'PAID' ? 'Record confirmed payment' : 'Create due contribution'}
             </Button>
+            {saveMessage ? <p role="status" className="text-sm font-semibold text-emerald-700">{saveMessage}</p> : null}
           </form> : <div className="space-y-3 text-sm text-[var(--ds-text-muted)]"><p>Your treasurer confirms contributions after M-Pesa reconciliation.</p>{paymentSettings?.isEnabled ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><strong>{paymentSettings.mode === 'PAYBILL' ? `PayBill ${paymentSettings.paybillNumber ?? ''}` : 'M-Pesa STK Push'}</strong><p className="mt-1">Use your personal account reference: <strong>{memberPaymentReference}</strong></p><p className="mt-1 text-xs">This reference identifies your payment during automatic reconciliation.</p></div> : null}</div>}
         </div>
       </section>
@@ -736,29 +765,31 @@ export const Contributions = () => {
           {canRecord ? <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             <SelectField label="Member" value={memberId} onChange={(event) => setMemberId(event.target.value)}>
               <option value="">Select member</option>
-              {members.map((member) => (
+              {activeMembers.map((member) => (
                 <option key={member.id} value={member.userId ?? member.id}>
                   {member.user?.firstName} {member.user?.lastName}
                 </option>
               ))}
             </SelectField>
             <div className="grid gap-4 sm:grid-cols-2">
-              <TextField label="Amount" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} />
+              <TextField label="Amount (KES)" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} />
               <TextField label="Period" type="month" value={period} onChange={(event) => setPeriod(event.target.value)} />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <TextField label="Type" value={contributionType} onChange={(event) => setContributionType(event.target.value)} />
-              <SelectField label="Member payment status" value={contributionStatus} onChange={(event) => setContributionStatus(event.target.value as 'PAID' | 'PENDING')}><option value="PAID">Paid</option><option value="PENDING">Not paid / Due</option></SelectField>
-              <SelectField label="Payment method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+              <SelectField label="Has the money been received?" value={contributionStatus} onChange={(event) => setContributionStatus(event.target.value as 'PAID' | 'PENDING')}><option value="PENDING">No — record as due</option><option value="PAID">Yes — record payment</option></SelectField>
+              {contributionStatus === 'PAID' ? <SelectField label="Payment method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
                 <option value="CASH">Cash</option>
                 <option value="MPESA">M-Pesa</option>
                 <option value="BANK">Bank</option>
-              </SelectField>
+              </SelectField> : null}
             </div>
-            <TextField label="Reference" value={reference} onChange={(event) => setReference(event.target.value)} />
+            {contributionStatus === 'PAID' ? <TextField label={paymentMethod === 'CASH' ? 'Receipt reference (optional)' : 'Transaction reference'} value={reference} onChange={(event) => setReference(event.target.value)} /> : null}
+            <p className="text-sm text-[var(--ds-text-muted)]">A due entry does not increase the group wallet. Confirm payment before marking it paid.</p>
             <Button type="submit" loading={saving} startIcon={!saving ? <Plus className="h-4 w-4" /> : undefined} className="w-full">
-              Record contribution
+              {contributionStatus === 'PAID' ? 'Record confirmed payment' : 'Create due contribution'}
             </Button>
+            {saveMessage ? <p role="status" className="text-sm font-semibold text-emerald-700">{saveMessage}</p> : null}
           </form> : null}
         </Card>
       </section>
