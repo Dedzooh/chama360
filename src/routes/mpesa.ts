@@ -85,6 +85,7 @@ router.post('/initiate',
       contributionId: paymentData.contributionId,
       memberId: contribution.memberId,
       chamaId: contribution.chamaId,
+      organizationId: contribution.organizationId,
       amount: Number(contribution.amount),
       phoneNumber: paymentData.phoneNumber,
       accountReference: paymentData.accountReference,
@@ -133,13 +134,8 @@ router.post('/callback',
     // Validate callback data
     const callbackData = mpesaCallbackSchema.parse(req.body);
 
-    // Process callback asynchronously
-    mpesaService.handleCallback(callbackData).catch(error => {
-      logger.error('Failed to process M-Pesa callback', {
-        error,
-        checkoutRequestId: callbackData.Body.stkCallback.CheckoutRequestID,
-      });
-    });
+    // Persist before acknowledging; a worker owns processing and retries.
+    await mpesaService.enqueueCallback(callbackData);
 
     // Respond immediately to M-Pesa
     res.status(200).json({
@@ -239,7 +235,7 @@ router.post('/reconcile/manual',
       const transactionMetadata = { ...((receiptTransaction?.metadata ?? {}) as any), contributionId: contribution.id, mpesaReceiptNumber: receipt, phoneNumber: reconciliationData.phoneNumber, transactionDate: reconciliationData.transactionDate, paymentMethod: 'MPESA', manualReconciliation: true, reconciliationRequired: false, reconciledBy: req.user!.id, reconciledAt: new Date() };
       const reconciledTransaction = receiptTransaction
         ? await tx.transaction.update({ where: { id: receiptTransaction.id }, data: { organizationId: contribution.organizationId, fromMemberId: contribution.memberId, status: 'COMPLETED', metadata: transactionMetadata } })
-        : await tx.transaction.create({ data: { chamaId: contribution.chamaId, organizationId: contribution.organizationId, type: 'CONTRIBUTION', amount: reconciliationData.amount, fromMemberId: contribution.memberId, reference: `MPESA-${receipt}`, idempotencyKey: `MANUAL:${receipt}`, status: 'COMPLETED', metadata: transactionMetadata } });
+        : await tx.transaction.create({ data: { chamaId: contribution.chamaId, organizationId: contribution.organizationId, type: 'CONTRIBUTION', amount: reconciliationData.amount, fromMemberId: contribution.memberId, reference: `MPESA-${receipt}`, idempotencyKey: `MPESA:MANUAL:${receipt}`, status: 'COMPLETED', metadata: transactionMetadata } });
       const updated = await tx.contribution.update({ where: { id: contribution.id }, data: { amount: contributionAmount, status: fullyPaid ? 'PAID' : 'PARTIAL', paidDate, paidAt: fullyPaid ? paidDate : null, paymentMethod: 'MPESA', reference: receipt, transactionRef: receipt, recordedById: req.user!.id } });
       if (contribution.organizationId) {
         await allocatePaidContribution(tx, updated);
@@ -336,7 +332,7 @@ router.post('/reconcile/bulk',
               amount: payment.amount,
               fromMemberId: contribution.memberId,
               reference: `MPESA-${payment.mpesaReceiptNumber}`,
-              idempotencyKey: payment.mpesaReceiptNumber,
+              idempotencyKey: `MPESA:BULK:${payment.mpesaReceiptNumber}`,
               status: TransactionStatus.COMPLETED,
               metadata: {
                 contributionId: contribution.id,
@@ -464,6 +460,7 @@ router.post('/retry/:contributionId',
       contributionId: contribution.id,
       memberId: contribution.memberId,
       chamaId: contribution.chamaId,
+      organizationId: contribution.organizationId,
       amount: Number(contribution.amount),
       phoneNumber: phoneNumber,
       accountReference: `RETRY-${contribution.id.substring(0, 8)}`,

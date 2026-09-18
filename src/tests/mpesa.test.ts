@@ -1,7 +1,7 @@
 // @ts-nocheck
 
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
-import { MpesaService } from '../services/mpesaService';
+import { classifyMpesaResultCode, MpesaService } from '../services/mpesaService';
 import { prisma } from '../config/database';
 import { ContributionService } from '../services/contributionService';
 import axios from 'axios';
@@ -15,8 +15,10 @@ jest.mock('../config/database', () => ({
     },
     transaction: {
       create: jest.fn(),
+      upsert: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
     },
@@ -152,6 +154,7 @@ describe('MpesaService', () => {
         contributionId: 'contrib-123',
         memberId: 'member-123',
         chamaId: 'chama-123',
+        organizationId: 'org-123',
         amount: 1000,
         phoneNumber: '0712345678',
         accountReference: 'CONTRIB-123',
@@ -161,7 +164,7 @@ describe('MpesaService', () => {
       expect(result.merchantRequestId).toBe('merchant-123');
       expect(result.checkoutRequestId).toBe('checkout-456');
       expect(result.responseCode).toBe('0');
-      expect(prisma.transaction.create).toHaveBeenCalled();
+      expect(prisma.transaction.upsert).toHaveBeenCalled();
     });
 
     it('should handle M-Pesa API errors', async () => {
@@ -207,16 +210,22 @@ describe('MpesaService', () => {
       const mockTransaction = {
         id: 'trans-123',
         chamaId: 'chama-123',
+        organizationId: 'org-123',
         amount: 1000,
         fromMemberId: 'member-123',
         status: 'PENDING',
         metadata: {
           contributionId: 'contrib-123',
+          merchantRequestId: 'merchant-123',
+          checkoutRequestId: 'checkout-456',
           phoneNumber: '254712345678',
+          organizationId: 'org-123',
         },
       };
 
       (prisma.transaction.findUnique as jest.Mock).mockResolvedValue(mockTransaction);
+      (prisma.transaction.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prisma.transaction.upsert as jest.Mock).mockResolvedValue({});
       (prisma.transaction.update as jest.Mock).mockResolvedValue({
         ...mockTransaction,
         status: 'COMPLETED',
@@ -226,9 +235,10 @@ describe('MpesaService', () => {
         id: 'contrib-123',
         chamaId: 'chama-123',
         memberId: 'member-123',
+          organizationId: 'org-123',
         amount: 1000,
         chama: { currency: 'KES' },
-        member: { firstName: 'John', lastName: 'Doe' },
+          member: { id: 'member-123', phone: '254712345678', firstName: 'John', lastName: 'Doe' },
       };
 
       (prisma.contribution.findUnique as jest.Mock).mockResolvedValue(mockContribution);
@@ -244,6 +254,7 @@ describe('MpesaService', () => {
             CallbackMetadata: {
               Item: [
                 { Name: 'MpesaReceiptNumber', Value: 'QGH1234567' },
+                { Name: 'Amount', Value: 1000 },
                 { Name: 'TransactionDate', Value: '20231215120000' },
                 { Name: 'PhoneNumber', Value: '254712345678' },
               ],
@@ -254,9 +265,9 @@ describe('MpesaService', () => {
 
       await service.handleCallback(callbackData);
 
-      expect(prisma.transaction.update).toHaveBeenCalledWith(
+      expect(prisma.transaction.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'trans-123' },
+          where: expect.objectContaining({ id: 'trans-123' }),
           data: expect.objectContaining({
             status: 'COMPLETED',
           }),
@@ -283,6 +294,7 @@ describe('MpesaService', () => {
       };
 
       (prisma.transaction.findUnique as jest.Mock).mockResolvedValue(mockTransaction);
+      (prisma.transaction.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
       (prisma.transaction.update as jest.Mock).mockResolvedValue({
         ...mockTransaction,
         status: 'FAILED',
@@ -302,15 +314,15 @@ describe('MpesaService', () => {
 
       await service.handleCallback(callbackData);
 
-      expect(prisma.transaction.update).toHaveBeenCalledWith(
+      expect(prisma.transaction.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'trans-123' },
+          where: expect.objectContaining({ id: 'trans-123' }),
           data: expect.objectContaining({
             status: 'FAILED',
           }),
         })
       );
-      expect(prisma.backgroundJob.create).toHaveBeenCalled();
+      expect(prisma.backgroundJob.create).not.toHaveBeenCalled();
     });
 
     it('should not retry after max retries', async () => {
@@ -331,6 +343,7 @@ describe('MpesaService', () => {
       };
 
       (prisma.transaction.findUnique as jest.Mock).mockResolvedValue(mockTransaction);
+      (prisma.transaction.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
       (prisma.transaction.update as jest.Mock).mockResolvedValue({
         ...mockTransaction,
         status: 'FAILED',
@@ -349,12 +362,20 @@ describe('MpesaService', () => {
 
       await service.handleCallback(callbackData);
 
-      expect(prisma.transaction.update).toHaveBeenCalled();
+      expect(prisma.transaction.updateMany).toHaveBeenCalled();
       expect(prisma.backgroundJob.create).not.toHaveBeenCalled();
     });
   });
 
   describe('Payment Status Query', () => {
+    it('classifies result codes before deciding whether to retry', () => {
+      expect(classifyMpesaResultCode(1001)).toBe('RETRYABLE');
+      expect(classifyMpesaResultCode(1037)).toBe('TIMEOUT');
+      expect(classifyMpesaResultCode(1032)).toBe('USER_CANCELLED');
+      expect(classifyMpesaResultCode(1)).toBe('INSUFFICIENT_FUNDS');
+      expect(classifyMpesaResultCode(400)).toBe('INVALID_REQUEST');
+    });
+
     it('should query payment status successfully', async () => {
       const service = new MpesaService();
       

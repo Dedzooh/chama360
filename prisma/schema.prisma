@@ -59,6 +59,7 @@ model User {
   auditLogs      AuditLog[]
   welfareClaimsRequested WelfareClaim[] @relation("WelfareClaimRequestedBy")
   welfareClaimsReviewed WelfareClaim[] @relation("WelfareClaimReviewedBy")
+  welfareClaimApprovals WelfareClaimApproval[]
   meetingsCreated Meeting[] @relation("MeetingCreatedBy")
   meetingAttendanceMarked MeetingAttendance[] @relation("MeetingAttendanceMember")
   meetingAttendanceRecorded MeetingAttendance[] @relation("MeetingAttendanceRecordedBy")
@@ -257,14 +258,17 @@ model BillingDocument {
 model RefreshToken {
   id        String   @id @default(cuid())
   tokenHash String   @unique
+  familyId  String
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
   isRevoked  Boolean  @default(false)
+  usedAt    DateTime?
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([familyId, isRevoked])
   @@map("refresh_tokens")
 }
 
@@ -993,10 +997,28 @@ model WelfareClaim {
   organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   requestedBy      User @relation("WelfareClaimRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
   reviewedBy       User? @relation("WelfareClaimReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  approvals        WelfareClaimApproval[]
 
   @@index([organizationId, status])
   @@index([requestedById, status])
   @@map("welfare_claims")
+}
+
+model WelfareClaimApproval {
+  id         String                       @id @default(cuid())
+  claimId    String
+  approverId String
+  decision   WelfareClaimApprovalDecision
+  comment    String?
+  createdAt  DateTime                     @default(now())
+
+  claim      WelfareClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  approver   User         @relation(fields: [approverId], references: [id], onDelete: Restrict)
+
+  @@unique([claimId, approverId])
+  @@index([claimId, decision])
+  @@index([approverId])
+  @@map("welfare_claim_approvals")
 }
 
 model Meeting {
@@ -1198,6 +1220,7 @@ enum GuarantorStatus {
 
 enum TransactionType {
   CONTRIBUTION
+  CONTRIBUTION_REVERSAL
   LOAN_DISBURSEMENT
   LOAN_PAYMENT
   PAYOUT
@@ -1205,11 +1228,38 @@ enum TransactionType {
   SHARE_OUT
 }
 
+
+model MpesaCallbackInbox {
+  id               String                   @id @default(cuid())
+  eventKey         String                   @unique
+  checkoutRequestId String
+  payload          Json
+  status           MpesaCallbackInboxStatus @default(PENDING)
+  attempts         Int                      @default(0)
+  lastError        String?
+  nextAttemptAt    DateTime                 @default(now())
+  receivedAt       DateTime                 @default(now())
+  processedAt      DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([checkoutRequestId])
+  @@map("mpesa_callback_inbox")
+}
+
 enum TransactionStatus {
   PENDING
   COMPLETED
   FAILED
+  RECONCILIATION_REQUIRED
   REVERSED
+}
+
+enum MpesaCallbackInboxStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
 }
 
 enum DisputeCategory {
@@ -1354,6 +1404,11 @@ enum WelfareClaimStatus {
   PARTIALLY_APPROVED
   PAID
   CANCELLED
+}
+
+enum WelfareClaimApprovalDecision {
+  APPROVED
+  REJECTED
 }
 
 enum MeetingStatus {

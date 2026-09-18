@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { LoanStatus, MemberStatus, MemberRole } from '@prisma/client';
+import { LoanStatus, MemberStatus } from '@prisma/client';
 import { prisma } from '../config/database';
 import { asyncHandler, BadRequestError, ForbiddenError } from '../middleware/errorHandler';
 import { authenticate, rateLimitSensitive, requireMfaIfEnabled } from '../middleware/auth';
 import { applyLoanSchema, loanListSchema } from '../schemas/loan';
 import { isOperationalChama } from '../utils/chamaLifecycle';
 import { auditLog, logger } from '../config/logger';
+import { Permission, PermissionService } from '../services/permissionService';
 
 const router = Router();
 
@@ -169,6 +170,9 @@ router.post('/:loanId/approve',
     if (!loan) {
       throw new BadRequestError('Loan not found');
     }
+    if (loan.status !== LoanStatus.PENDING) {
+      throw new BadRequestError('Only pending loans can be approved');
+    }
 
     const chama = await prisma.chama.findUnique({
       where: { id: loan.chamaId },
@@ -179,17 +183,8 @@ router.post('/:loanId/approve',
       throw new ForbiddenError('Loans cannot be approved unless the chama is active');
     }
 
-    const membership = await prisma.chamaMembership.findUnique({
-      where: {
-        chamaId_userId: {
-          chamaId: loan.chamaId,
-          userId: req.user.id,
-        },
-      },
-    });
-
-    const allowedRoles: MemberRole[] = [MemberRole.FOUNDER, MemberRole.CHAIR, MemberRole.TREASURER];
-    if (!membership || !allowedRoles.includes(membership.role)) {
+    const permission = await PermissionService.hasPermission(req.user.id, loan.chamaId, Permission.APPROVE_LOANS);
+    if (!permission.granted) {
       throw new ForbiddenError('Insufficient permissions to approve loan');
     }
 

@@ -8,6 +8,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { NotFoundError } from '../middleware/errorHandler';
 import {
   NotificationData,
   NotificationChannelData,
@@ -210,14 +211,19 @@ export class NotificationService {
    * Mark notification as acknowledged by user
    * Requirement 25.3: Acknowledgment mechanisms for critical messages
    */
-  async acknowledgeNotification(notificationId: string): Promise<NotificationData> {
-    const notification = await this.prisma.notification.update({
+  async acknowledgeNotification(notificationId: string, recipientId: string): Promise<NotificationData> {
+    const notification = await this.prisma.notification.findFirst({ where: { id: notificationId, recipientId } });
+    if (!notification) {
+      throw new NotFoundError('Notification not found');
+    }
+
+    const acknowledged = await this.prisma.notification.update({
       where: { id: notificationId },
       data: { acknowledgedAt: new Date() },
       include: { channels: true }
     });
 
-    return notification as NotificationData;
+    return acknowledged as NotificationData;
   }
 
   /**

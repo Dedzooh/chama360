@@ -199,7 +199,6 @@ export class AuthService {
         where: {
           tokenHash: this.fingerprintToken(token),
           userId: payload.userId,
-          isRevoked: false,
           expiresAt: {
             gt: new Date(),
           },
@@ -208,6 +207,10 @@ export class AuthService {
 
       if (!refreshTokenRecord) {
         throw new UnauthorizedError('Refresh token not found or expired');
+      }
+      if (refreshTokenRecord.isRevoked) {
+        await this.revokeRefreshTokenFamily(refreshTokenRecord.familyId, payload.userId);
+        throw new UnauthorizedError('Refresh token reuse detected; session family revoked');
       }
 
       const session = await RedisService.get<UserSession>(this.sessionKey(payload.sessionId), true);
@@ -286,6 +289,7 @@ export class AuthService {
     await prisma.refreshToken.create({
       data: {
         tokenHash: this.fingerprintToken(refreshToken),
+        familyId: sessionId,
         userId: user.id,
         expiresAt: refreshTokenExpiry,
       },
@@ -333,16 +337,30 @@ export class AuthService {
       throw new UnauthorizedError('User not found or inactive');
     }
 
-    // Revoke old refresh token (rotation)
-    await prisma.refreshToken.updateMany({
+    const currentToken = await prisma.refreshToken.findFirst({
+      where: { tokenHash: this.fingerprintToken(refreshToken), userId: user.id },
+    });
+    if (!currentToken || currentToken.userId !== user.id) {
+      throw new UnauthorizedError('Refresh token not found or expired');
+    }
+
+    // Claim the token exactly once. A second use indicates token reuse.
+    const claimed = await prisma.refreshToken.updateMany({
       where: {
-        tokenHash: this.fingerprintToken(refreshToken),
+        id: currentToken.id,
         userId: user.id,
+        isRevoked: false,
+        usedAt: null,
       },
       data: {
         isRevoked: true,
+        usedAt: new Date(),
       },
     });
+    if (claimed.count !== 1) {
+      await this.revokeRefreshTokenFamily(currentToken.familyId ?? payload.sessionId, user.id);
+      throw new UnauthorizedError('Refresh token reuse detected; session family revoked');
+    }
 
     // Generate new session ID for security
     const newSessionId = this.generateSecureToken();
@@ -388,6 +406,7 @@ export class AuthService {
     await prisma.refreshToken.create({
       data: {
         tokenHash: this.fingerprintToken(newRefreshToken),
+        familyId: currentToken.familyId ?? payload.sessionId,
         userId: user.id,
         expiresAt: refreshTokenExpiry,
       },
@@ -407,6 +426,17 @@ export class AuthService {
       refreshToken: newRefreshToken,
       expiresAt: accessTokenExpiry,
     };
+  }
+
+  private static async revokeRefreshTokenFamily(familyId: string, userId: string): Promise<void> {
+    await prisma.refreshToken.updateMany({
+      where: { familyId, userId, isRevoked: false },
+      data: { isRevoked: true, usedAt: new Date() },
+    });
+
+    const sessionIds = await RedisService.smembers(this.userSessionsKey(userId));
+    await Promise.all(sessionIds.map((sessionId) => RedisService.del(this.sessionKey(sessionId))));
+    await RedisService.del(this.userSessionsKey(userId));
   }
 
   /**

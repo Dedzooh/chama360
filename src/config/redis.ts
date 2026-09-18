@@ -69,6 +69,16 @@ export class RedisService {
     return result === 'OK';
   }
 
+  static async releaseIfOwned(key: string, value: string): Promise<boolean> {
+    const result = await redis.eval(
+      "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
+      1,
+      key,
+      value,
+    );
+    return Number(result) === 1;
+  }
+
   static async get<T = string>(key: string, parseJson = false): Promise<T | null> {
     const value = await redis.get(key);
 

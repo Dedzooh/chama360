@@ -44,13 +44,31 @@ services:
       - app_uploads:/app/uploads
     networks: [backend]
 
+  backup:
+    build:
+      context: .
+      dockerfile: docker/backup/Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:?Set BACKUP_S3_BUCKET for encrypted backups}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:?Set BACKUP_ENCRYPTION_KEY in the deployment secret store}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-chama360}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - app_uploads:/var/lib/chama360/uploads:ro
+    networks: [backend]
+
   web:
     build:
       context: .
       dockerfile: Dockerfile.web
       args:
         VITE_API_URL: /api/v1
-        VITE_ANDROID_API_URL: http://15.235.33.47/api/v1
+        VITE_ANDROID_API_URL: ${VITE_ANDROID_API_URL:?Set VITE_ANDROID_API_URL to the production HTTPS API URL}
     restart: unless-stopped
     depends_on:
       app:

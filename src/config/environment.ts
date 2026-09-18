@@ -29,6 +29,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   API_VERSION: z.string().default('v1'),
   APP_WEB_URL: z.string().url().default('http://localhost:5173'),
+  TRUST_PROXY_HOPS: z.string().transform(val => parseInt(val, 10)).pipe(z.number().int().min(0).max(10)).default('1'),
   
   // CORS
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
@@ -174,6 +175,7 @@ export const config = {
     nodeEnv: env.NODE_ENV,
     apiVersion: env.API_VERSION,
     webUrl: env.APP_WEB_URL,
+    trustProxyHops: env.TRUST_PROXY_HOPS,
     isDevelopment: env.NODE_ENV === 'development',
     isProduction: env.NODE_ENV === 'production',
     isTest: env.NODE_ENV === 'test',

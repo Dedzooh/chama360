@@ -23,7 +23,11 @@ const adaptLoopbackUrlForLanBrowser = (configuredUrl: string) => {
 export const getApiBaseUrl = () => {
   const webUrl = import.meta.env.VITE_API_URL?.trim() || FALLBACK_WEB_API_URL;
   if (!Capacitor.isNativePlatform()) return adaptLoopbackUrlForLanBrowser(webUrl);
-  return import.meta.env.VITE_ANDROID_API_URL?.trim() || webUrl || FALLBACK_ANDROID_API_URL;
+  const androidUrl = import.meta.env.VITE_ANDROID_API_URL?.trim();
+  if (import.meta.env.PROD && (!androidUrl || !androidUrl.startsWith('https://'))) {
+    throw new Error('VITE_ANDROID_API_URL must be an explicit HTTPS URL in production builds');
+  }
+  return androidUrl || webUrl || FALLBACK_ANDROID_API_URL;
 };
 
 export const isLocalTestingHost = (hostname: string) =>

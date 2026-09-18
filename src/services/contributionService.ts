@@ -374,7 +374,7 @@ export class ContributionService {
     }
 
     // Create idempotency key for transaction
-    const idempotencyKey = data.transactionRef || uuidv4();
+    const idempotencyKey = `CONTRIBUTION:${contribution.id}:${data.transactionRef || uuidv4()}`;
 
     // Check for duplicate transaction
     const existingTransaction = await prisma.transaction.findUnique({

@@ -127,7 +127,7 @@ export function evaluateWelfareEligibility(input: WelfareEligibilityInput) {
 }
 
 export function computeApprovalOutcome(input: ApprovalOutcomeInput) {
-  const approvals = (input.approvals ?? []).filter((approval): approval is string => Boolean(approval));
+  const approvals = [...new Set((input.approvals ?? []).filter((approval): approval is string => Boolean(approval)))];
   const requiredApprovals = Math.max(1, Number(input.requiredApprovals ?? (approvals.length > 0 ? approvals.length : 1)));
   const thresholdPercent = Number.isFinite(input.thresholdPercent ?? 100) ? Number(input.thresholdPercent ?? 100) : 100;
   const totalPossibleApprovers = Math.max(approvals.length, Number(input.totalPossibleApprovers ?? (approvals.length > 0 ? approvals.length : 1)));

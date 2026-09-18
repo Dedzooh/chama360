@@ -67,6 +67,18 @@ interface MpesaCallback {
   };
 }
 
+export type MpesaFailureClassification = 'RETRYABLE' | 'USER_CANCELLED' | 'INSUFFICIENT_FUNDS' | 'TIMEOUT' | 'INVALID_REQUEST' | 'PERMANENT_FAILURE';
+
+export function classifyMpesaResultCode(resultCode: number, resultDescription = ''): MpesaFailureClassification {
+  const description = resultDescription.toLowerCase();
+  if (resultCode === 1032 || description.includes('cancel')) return 'USER_CANCELLED';
+  if (resultCode === 1 || description.includes('insufficient')) return 'INSUFFICIENT_FUNDS';
+  if (resultCode === 1037 || description.includes('timeout') || description.includes('timed out')) return 'TIMEOUT';
+  if (resultCode >= 400 && resultCode < 500 || description.includes('invalid')) return 'INVALID_REQUEST';
+  if ([1001, 1006, 1019, 1025, 9999].includes(resultCode)) return 'RETRYABLE';
+  return 'PERMANENT_FAILURE';
+}
+
 interface PaymentRecord {
   id: string;
   merchantRequestId: string;
@@ -74,6 +86,7 @@ interface PaymentRecord {
   contributionId: string;
   memberId: string;
   chamaId: string;
+  organizationId?: string | null;
   amount: number;
   phoneNumber: string;
   status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
@@ -219,6 +232,7 @@ export class MpesaService {
     contributionId: string;
     memberId: string;
     chamaId: string;
+    organizationId?: string | null;
     amount: number;
     phoneNumber: string;
     accountReference: string;
@@ -319,18 +333,21 @@ export class MpesaService {
     await LedgerService.recordContributionPayment(
       { transaction: prisma.transaction },
       {
-        organizationId: null,
+        organizationId: data.organizationId ?? null,
         chamaId: data.chamaId,
         fromMemberId: data.memberId,
         amount: data.amount,
         reference: `MPESA-${data.checkoutRequestId}`,
-        idempotencyKey: data.checkoutRequestId,
+        idempotencyKey: `MPESA:${data.checkoutRequestId}`,
         status: TransactionStatus.PENDING,
         metadata: {
           merchantRequestId: data.merchantRequestId,
           checkoutRequestId: data.checkoutRequestId,
           contributionId: data.contributionId,
           phoneNumber: data.phoneNumber,
+          organizationId: data.organizationId ?? null,
+          memberId: data.memberId,
+          expectedAmount: Math.round(data.amount),
           paymentMethod: 'MPESA',
           retryCount: data.retryCount,
           maxRetries: data.maxRetries,
@@ -350,7 +367,7 @@ export class MpesaService {
     try {
       // Find the payment record
       const transaction = await prisma.transaction.findUnique({
-        where: { idempotencyKey: CheckoutRequestID },
+        where: { idempotencyKey: `MPESA:${CheckoutRequestID}` },
       });
 
       if (!transaction) {
@@ -380,6 +397,48 @@ export class MpesaService {
         const phoneNumber = callbackMetadata.find(
           item => item.Name === 'PhoneNumber'
         )?.Value as string;
+        const callbackAmount = Number(callbackMetadata.find(item => item.Name === 'Amount')?.Value);
+        const contribution = metadata.contributionId
+          ? await prisma.contribution.findUnique({ where: { id: metadata.contributionId }, include: { member: true } })
+          : null;
+        const expectedPhone = this.normalizePhoneNumber(String(metadata.phoneNumber ?? contribution?.member?.phone ?? ''));
+        const memberPhone = this.normalizePhoneNumber(String(contribution?.member?.phone ?? ''));
+        const receivedPhone = this.normalizePhoneNumber(String(phoneNumber ?? ''));
+        const expectedAmount = Math.round(Number(transaction.amount));
+        const expectedContributionAmount = contribution ? Math.round(Number(contribution.amount)) : NaN;
+        const mismatchReasons = [
+          metadata.checkoutRequestId !== CheckoutRequestID ? 'CheckoutRequestID does not match the initiated payment' : null,
+          metadata.merchantRequestId !== callback.MerchantRequestID ? 'MerchantRequestID does not match the initiated payment' : null,
+          !contribution ? 'Contribution was not found' : null,
+          contribution && transaction.fromMemberId !== contribution.memberId ? 'Callback member does not match the contribution member' : null,
+          contribution && transaction.chamaId !== contribution.chamaId ? 'Callback Chama does not match the contribution Chama' : null,
+          contribution && transaction.organizationId !== contribution.organizationId ? 'Callback organization does not match the contribution organization' : null,
+          contribution && expectedAmount !== expectedContributionAmount ? 'Initiated amount does not match the current contribution amount' : null,
+          !Number.isFinite(callbackAmount) || callbackAmount !== expectedAmount || callbackAmount !== expectedContributionAmount ? `Callback amount does not match expected contribution amount KES ${expectedContributionAmount}` : null,
+          !receivedPhone || receivedPhone !== expectedPhone || receivedPhone !== memberPhone ? 'Callback phone number does not match the paying member' : null,
+          !mpesaReceiptNumber ? 'M-Pesa receipt number is missing' : null,
+        ].filter((reason): reason is string => Boolean(reason));
+
+        if (mismatchReasons.length > 0) {
+          const flagged = await prisma.transaction.updateMany({
+            where: { id: transaction.id, status: TransactionStatus.PENDING },
+            data: {
+              status: TransactionStatus.RECONCILIATION_REQUIRED,
+              metadata: {
+                ...metadata,
+                resultCode: ResultCode,
+                resultDescription: ResultDesc,
+                callbackPayload: callbackData,
+                callbackAmount: Number.isFinite(callbackAmount) ? callbackAmount : null,
+                reconciliationRequired: true,
+                reconciliationReasons: mismatchReasons,
+                flaggedAt: new Date(),
+              },
+            },
+          });
+          if (flagged.count > 0) logger.warn('M-Pesa callback requires manual reconciliation', { checkoutRequestId: CheckoutRequestID, reasons: mismatchReasons });
+          return;
+        }
 
         // Claim the callback atomically. A repeated or concurrent callback must not post twice.
         const claimed = await prisma.transaction.updateMany({
@@ -445,8 +504,13 @@ export class MpesaService {
         // Check if we should retry
         const retryCount = metadata.retryCount || 0;
         const maxRetries = metadata.maxRetries || 3;
+        const classification = classifyMpesaResultCode(ResultCode, ResultDesc);
+        await prisma.transaction.update({
+          where: { id: transaction.id },
+          data: { metadata: { ...metadata, resultCode: ResultCode, resultDescription: ResultDesc, callbackPayload: callbackData, failureClassification: classification, failedAt: new Date() } },
+        });
 
-        if (retryCount < maxRetries) {
+        if ((classification === 'RETRYABLE' || classification === 'TIMEOUT') && retryCount < maxRetries) {
           // Schedule retry
           await this.scheduleRetry({
             contributionId: metadata.contributionId,
@@ -479,6 +543,73 @@ export class MpesaService {
       });
       throw error;
     }
+  }
+
+  async enqueueCallback(callbackData: MpesaCallback): Promise<void> {
+    const checkoutRequestId = callbackData.Body.stkCallback.CheckoutRequestID;
+    await prisma.mpesaCallbackInbox.upsert({
+      where: { eventKey: `STK:${checkoutRequestId}` },
+      update: {},
+      create: {
+        eventKey: `STK:${checkoutRequestId}`,
+        checkoutRequestId,
+        payload: JSON.parse(JSON.stringify(callbackData)),
+      },
+    });
+  }
+
+  async processPendingCallbacks(limit = 25): Promise<{ processed: number; failed: number }> {
+    const staleProcessingCutoff = new Date(Date.now() - 5 * 60 * 1000);
+    const now = new Date();
+    const events = await prisma.mpesaCallbackInbox.findMany({
+      where: {
+        nextAttemptAt: { lte: now },
+        OR: [
+          { status: 'PENDING' },
+          { status: 'PROCESSING', updatedAt: { lt: staleProcessingCutoff } },
+        ],
+      },
+      orderBy: { receivedAt: 'asc' },
+      take: limit,
+    });
+
+    let processed = 0;
+    let failed = 0;
+    for (const event of events) {
+      const claimed = await prisma.mpesaCallbackInbox.updateMany({
+        where: {
+          id: event.id,
+          OR: [
+            { status: 'PENDING' },
+            { status: 'PROCESSING', updatedAt: { lt: staleProcessingCutoff } },
+          ],
+        },
+        data: { status: 'PROCESSING', attempts: { increment: 1 }, lastError: null },
+      });
+      if (claimed.count !== 1) continue;
+
+      try {
+        await this.handleCallback(event.payload as unknown as MpesaCallback);
+        await prisma.mpesaCallbackInbox.update({
+          where: { id: event.id },
+          data: { status: 'COMPLETED', processedAt: new Date(), lastError: null },
+        });
+        processed += 1;
+      } catch (error) {
+        failed += 1;
+        const message = error instanceof Error ? error.message : 'M-Pesa callback processing failed';
+        await prisma.mpesaCallbackInbox.update({
+          where: { id: event.id },
+          data: {
+            status: 'PENDING',
+            lastError: message,
+            nextAttemptAt: new Date(Date.now() + 30 * 1000),
+          },
+        });
+        logger.error('M-Pesa callback inbox processing failed; scheduled retry', { error, eventId: event.id, checkoutRequestId: event.checkoutRequestId });
+      }
+    }
+    return { processed, failed };
   }
 
   async handleC2BConfirmation(data: MpesaC2BConfirmationInput): Promise<{ matched: boolean; duplicate?: boolean; message: string }> {
@@ -597,26 +728,6 @@ export class MpesaService {
         contribution.memberId // System reconciliation uses member's ID
       );
 
-      await LedgerService.recordContributionPayment(
-        { transaction: prisma.transaction },
-        {
-          organizationId: contribution.organizationId ?? null,
-          chamaId: contribution.chamaId,
-          fromMemberId: contribution.memberId,
-          amount: data.amount,
-          reference: data.transactionRef,
-          idempotencyKey: `mpesa:${data.transactionRef}:${data.contributionId}`,
-          status: TransactionStatus.COMPLETED,
-          metadata: {
-            contributionId: data.contributionId,
-            paymentMethod: 'MPESA',
-            transactionRef: data.transactionRef,
-            phoneNumber: data.phoneNumber,
-            source: 'CALLBACK_SUCCESS',
-          },
-        }
-      );
-
       logger.info('Payment reconciled with contribution', {
         contributionId: data.contributionId,
         amount: data.amount,
@@ -643,9 +754,8 @@ export class MpesaService {
     phoneNumber: string;
     retryCount: number;
   }): Promise<void> {
-    // Calculate exponential backoff delay (1 hour, 3 hours, 6 hours)
-    const delayHours = Math.pow(2, data.retryCount - 1);
-    const scheduledAt = new Date(Date.now() + delayHours * 60 * 60 * 1000);
+    const delayMinutes = Math.min(60, 5 * Math.pow(2, data.retryCount - 1));
+    const scheduledAt = new Date(Date.now() + delayMinutes * 60 * 1000);
 
     // Create background job for retry
     await prisma.backgroundJob.create({
@@ -685,7 +795,7 @@ export class MpesaService {
   }> {
     try {
       const transaction = await prisma.transaction.findUnique({
-        where: { idempotencyKey: checkoutRequestId },
+        where: { idempotencyKey: `MPESA:${checkoutRequestId}` },
       });
 
       if (!transaction) {

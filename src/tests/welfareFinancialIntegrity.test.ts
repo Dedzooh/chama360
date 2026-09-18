@@ -1,4 +1,3 @@
-import { PrismaClient } from '@prisma/client';
 import { computeApprovalOutcome, evaluateWelfareEligibility, validateWelfarePayout } from '../services/welfareGuardrails';
 
 describe('Welfare financial integrity guards', () => {
@@ -113,5 +112,17 @@ describe('Welfare financial integrity guards', () => {
     });
 
     expect(result.approved).toBe(true);
+  });
+
+  it('counts each approver only once toward the threshold', () => {
+    const result = computeApprovalOutcome({
+      approvals: ['user-1', 'user-1', 'user-2'],
+      requiredApprovals: 3,
+      thresholdPercent: 100,
+      totalPossibleApprovers: 3,
+    });
+
+    expect(result.approvalsReceived).toBe(2);
+    expect(result.approved).toBe(false);
   });
 });

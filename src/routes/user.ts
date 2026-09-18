@@ -468,7 +468,7 @@ router.patch('/notifications/:notificationId/acknowledge', authenticate, asyncHa
   }
 
   const { notificationId } = req.params as { notificationId: string };
-  const notification = await notificationService.acknowledgeNotification(notificationId);
+  const notification = await notificationService.acknowledgeNotification(notificationId, req.user.id);
 
   res.json({ notification });
 }));

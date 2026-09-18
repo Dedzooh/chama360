@@ -54,6 +54,7 @@ const mockRedis = RedisService as any;
 describe('AuthService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRedis.smembers.mockResolvedValue([]);
   });
 
   describe('hashPassword', () => {
@@ -267,6 +268,8 @@ describe('AuthService', () => {
 
       const mockRefreshToken = {
         tokenHash: AuthService.fingerprintToken(refreshToken),
+        id: 'refresh-token-1',
+        familyId: 'family-1',
         userId: payload.userId,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         isRevoked: false,
@@ -282,6 +285,7 @@ describe('AuthService', () => {
         mfaVerified: true,
       });
       mockPrisma.refreshToken.findFirst.mockResolvedValue(mockRefreshToken as any);
+      mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 1 } as any);
       mockPrisma.user.findUnique.mockResolvedValue(mockUser as any);
       mockPrisma.refreshToken.create.mockResolvedValue({} as any);
       mockRedis.del.mockResolvedValue(1);
@@ -328,6 +332,25 @@ describe('AuthService', () => {
     });
   });
 
+    it('revokes the entire token family when a rotated token is reused', async () => {
+      const payload = { userId: 'user123', email: 'test@example.com', sessionId: 'session123' };
+      const refreshToken = AuthService.generateRefreshToken(payload);
+      mockRedis.exists.mockResolvedValue(false);
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'refresh-token-1',
+        tokenHash: AuthService.fingerprintToken(refreshToken),
+        familyId: 'family-1',
+        userId: payload.userId,
+        isRevoked: true,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(AuthService.refreshTokens(refreshToken)).rejects.toThrow('reuse detected');
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { familyId: 'family-1', userId: payload.userId, isRevoked: false },
+      }));
+    });
+
   describe('revokeSession', () => {
     it('should revoke session successfully', async () => {
       const sessionId = 'session123';
@@ -346,7 +369,10 @@ describe('AuthService', () => {
 
       expect(mockRedis.del).toHaveBeenCalledWith(`session:v2:${sessionId}`);
       expect(mockRedis.srem).toHaveBeenCalledWith('user_sessions:v2:user123', sessionId);
-      expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user123', isRevoked: false },
+        data: { isRevoked: true },
+      });
     });
 
     it('should throw error for non-existent session', async () => {

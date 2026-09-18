@@ -25,6 +25,7 @@ jest.mock('../config/database', () => ({
     },
     transaction: {
       create: jest.fn(),
+      findMany: jest.fn(),
       findUnique: jest.fn(),
       findFirst: jest.fn(),
     },
@@ -44,6 +45,7 @@ jest.mock('../services/backgroundJobService');
 describe('ContributionService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (prisma.transaction.findMany as jest.Mock).mockResolvedValue([]);
   });
 
   describe('createContributionCycle', () => {

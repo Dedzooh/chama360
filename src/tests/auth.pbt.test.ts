@@ -217,6 +217,8 @@ describe('Property: Authentication and Session Management', () => {
           const refreshToken = AuthService.generateRefreshToken(userData);
           const mockRefreshToken = {
             tokenHash: AuthService.fingerprintToken(refreshToken),
+            id: `refresh-${userData.userId}`,
+            familyId: `family-${userData.userId}`,
             userId: userData.userId,
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
             isRevoked: false,
@@ -253,15 +255,18 @@ describe('Property: Authentication and Session Management', () => {
           expect(newTokens.refreshToken).not.toBe(refreshToken);
 
           // Property: Old refresh token should be revoked (rotation)
-          expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
+          expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(expect.objectContaining({
             where: {
-              tokenHash: AuthService.fingerprintToken(refreshToken),
+              id: `refresh-${userData.userId}`,
               userId: userData.userId,
+              isRevoked: false,
+              usedAt: null,
             },
-            data: {
+            data: expect.objectContaining({
               isRevoked: true,
-            },
-          });
+              usedAt: expect.any(Date),
+            }),
+          }));
 
           // Property: New session should be created
           expect(mockRedis.set).toHaveBeenCalled();

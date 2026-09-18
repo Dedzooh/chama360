@@ -159,6 +159,19 @@ export interface WelfareClaimRecord {
     lastName: string;
     email: string;
   } | null;
+  approvals?: Array<{
+    id: string;
+    approverId: string;
+    decision: 'APPROVED' | 'REJECTED';
+    comment?: string | null;
+    createdAt: string;
+    approver?: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+    } | null;
+  }>;
 }
 
 export interface InvestmentAsset {
