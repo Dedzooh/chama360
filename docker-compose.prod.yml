@@ -69,6 +69,7 @@ services:
       args:
         VITE_API_URL: /api/v1
         VITE_ANDROID_API_URL: ${VITE_ANDROID_API_URL:?Set VITE_ANDROID_API_URL to the production HTTPS API URL}
+        ALLOW_INSECURE_ANDROID_API: ${ALLOW_INSECURE_ANDROID_API:-false}
     restart: unless-stopped
     depends_on:
       app:
