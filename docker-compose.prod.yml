@@ -42,7 +42,7 @@ services:
     volumes:
       - app_logs:/app/logs
       - app_uploads:/app/uploads
-    networks: [backend]
+    networks: [backend, egress]
 
   backup:
     build:
@@ -60,7 +60,7 @@ services:
         condition: service_healthy
     volumes:
       - app_uploads:/var/lib/chama360/uploads:ro
-    networks: [backend]
+    networks: [backend, egress]
 
   web:
     build:
@@ -88,4 +88,5 @@ volumes:
 networks:
   backend:
     internal: true
+  egress:
   public:
