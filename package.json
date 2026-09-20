@@ -20,7 +20,7 @@
     "release:check": "tsx src/scripts/release-preflight.ts --production && node --env-file=.env.production node_modules/prisma/build/index.js migrate status && npm run type-check && npm --prefix client run build",
     "test:smoke": "tsx src/scripts/smoke-core-flow.ts",
     "identity:backfill": "tsx src/scripts/backfill-national-id-protection.ts",
-    "platform:bootstrap-owner": "tsx src/scripts/bootstrap-platform-owner.ts",
+    "platform:bootstrap-owner": "node dist/scripts/bootstrap-platform-owner.js",
     "contributions:reconcile": "tsx src/scripts/reconcile-monthly-contributions.ts",
     "contributions:penalties": "tsx src/scripts/reconcile-contribution-penalties.ts",
     "contributions:reminders": "tsx src/scripts/reconcile-contribution-reminders.ts",

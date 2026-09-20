@@ -47,8 +47,9 @@ backup_once() {
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   local dump="$WORK_DIR/chama360-${timestamp}.dump"
   local config="$WORK_DIR/chama360-${timestamp}.env"
+  local dump_database_url="${DATABASE_URL%%\?*}"
 
-  pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL" > "$dump"
+  pg_dump --format=custom --no-owner --no-privileges "$dump_database_url" > "$dump"
   upload_encrypted "$dump" "database/${timestamp}.dump.enc"
 
   # Capture configuration in encrypted form; plaintext exists only in the container work directory.
