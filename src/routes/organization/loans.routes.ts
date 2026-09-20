@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import { GuarantorStatus, LoanStatus, PaymentMethod, Prisma, TransactionStatus } from '@prisma/client';
 import { authenticate, rateLimitSensitive, requireMfaIfEnabled } from '../../middleware/auth';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
+import { requireSubscriptionFeature } from '../../middleware/subscription';
 export function registerLoansRoutes(router: Router, context: any): void {
   const { db, loanApplySchema, guaranteeDecisionSchema, loanRepaySchema, getOrganizationAccess, isFinanceManager, isWelfareApprover, requireOrganizationStatus, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit } = context;
 router.post(
@@ -79,12 +81,12 @@ router.post(
         dueDate: new Date(Date.now() + payload.repaymentPeriodMonths * 30 * 24 * 60 * 60 * 1000),
         balance: amountRequested,
         riskScore: 0,
-        status: 'PENDING' as any,
+        status: LoanStatus.PENDING,
         guarantors: {
           create: guarantorIds.map((memberId) => ({
             memberId,
             guaranteedAmount: amountRequested,
-            status: 'PENDING' as any,
+            status: GuarantorStatus.PENDING,
           })),
         },
       },
@@ -155,7 +157,7 @@ router.get(
       db.loan.count({ where: { organizationId: id, status: 'ACTIVE' } }),
       db.loan.count({ where: { organizationId: id, status: 'PAID' } }),
       db.loan.count({ where: { organizationId: id, status: 'REJECTED' } }),
-      db.loan.count({ where: { organizationId: id, status: { in: ['APPROVED', 'ACTIVE', 'DEFAULTED'] as any } } }),
+      db.loan.count({ where: { organizationId: id, status: { in: [LoanStatus.APPROVED, LoanStatus.ACTIVE, LoanStatus.DEFAULTED] } } }),
       db.loan.aggregate({ where: { organizationId: id }, _sum: { amountRequested: true } }),
       db.loan.aggregate({ where: { organizationId: id }, _sum: { amountApproved: true } }),
     ]);
@@ -207,6 +209,7 @@ router.get(
 router.patch(
   '/:id/loans/:loanId/approve',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   requireMfaIfEnabled,
   rateLimitSensitive,
   asyncHandler(async (req: Request, res: Response) => {
@@ -237,7 +240,7 @@ router.patch(
     const loan = await db.loan.update({
       where: { id: loanId },
       data: {
-        status: 'APPROVED' as any,
+        status: LoanStatus.APPROVED,
         amountApproved: amountApproved,
         amount: amountApproved,
         reviewedById: req.user.id as string,
@@ -305,11 +308,11 @@ router.patch(
       throw new BadRequestError('Guaranteed amount cannot exceed the loan amount');
     }
 
-    const loan = await db.$transaction(async (tx: any) => {
+    const loan = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.loanGuarantor.update({
         where: { id: guarantee.id },
         data: {
-          status: 'ACTIVE',
+          status: GuarantorStatus.ACTIVE,
           guaranteedAmount,
         },
       });
@@ -321,7 +324,7 @@ router.patch(
           entityType: 'LoanGuarantor',
           entityId: guarantee.id,
           oldValues: guarantee,
-          newValues: { ...guarantee, status: 'ACTIVE', guaranteedAmount },
+          newValues: { ...guarantee, status: GuarantorStatus.ACTIVE, guaranteedAmount },
           metadata: { loanId, guaranteeDecision: 'ACCEPTED' },
         },
       });
@@ -365,10 +368,10 @@ router.patch(
       throw new ForbiddenError('You were not requested to guarantee this loan');
     }
 
-    const loan = await db.$transaction(async (tx: any) => {
+    const loan = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.loanGuarantor.update({
         where: { id: guarantee.id },
-        data: { status: 'DECLINED' },
+        data: { status: GuarantorStatus.DECLINED },
       });
       await tx.organizationAuditLog.create({
         data: {
@@ -378,7 +381,7 @@ router.patch(
           entityType: 'LoanGuarantor',
           entityId: guarantee.id,
           oldValues: guarantee,
-          newValues: { ...guarantee, status: 'DECLINED' },
+          newValues: { ...guarantee, status: GuarantorStatus.DECLINED },
           metadata: { loanId, guaranteeDecision: 'DECLINED' },
         },
       });
@@ -401,6 +404,7 @@ router.patch(
 router.patch(
   '/:id/loans/:loanId/reject',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -425,7 +429,7 @@ router.patch(
     const loan = await db.loan.update({
       where: { id: loanId },
       data: {
-        status: 'REJECTED' as any,
+        status: LoanStatus.REJECTED,
         reviewedById: req.user.id as string,
         reviewedAt: new Date(),
       },
@@ -456,6 +460,7 @@ router.patch(
 router.patch(
   '/:id/loans/:loanId/disburse',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   requireMfaIfEnabled,
   rateLimitSensitive,
   asyncHandler(async (req: Request, res: Response) => {
@@ -489,12 +494,13 @@ router.patch(
     const linkedChamaId = currentOrganization.chama?.id;
     if (!linkedChamaId) throw new BadRequestError('Organization is not linked to an active Chama');
     const disbursementAmount = Number(existing.amountApproved ?? existing.amount);
-    const loan = await runFinancialTransaction(async (tx: any) => {
-      const wallet = await tx.organizationWallet.findUnique({ where: { organizationId: id } });
-      if (!wallet || Number(wallet.balance) < disbursementAmount) throw new BadRequestError('The Chama wallet does not have enough funds to disburse this loan');
-      const updated = await tx.loan.update({ where: { id: loanId }, data: { status: 'ACTIVE', disbursedAt: new Date() }, include: { borrower: true, requestedBy: true, reviewedBy: true, guarantors: { include: { member: true } }, repayments: true } });
-      await tx.transaction.create({ data: { chamaId: linkedChamaId, organizationId: id, type: 'LOAN_DISBURSEMENT', amount: disbursementAmount, toMemberId: existing.borrowerId, reference: `LOAN-DISBURSEMENT-${loanId}`, idempotencyKey: `organization:${id}:loan-disbursement:${loanId}`, status: 'COMPLETED', metadata: { loanId } } });
-      await tx.organizationWallet.update({ where: { organizationId: id }, data: { balance: { decrement: disbursementAmount } } });
+    const loan = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
+      const walletDebit = await tx.organizationWallet.updateMany({ where: { organizationId: id, balance: { gte: disbursementAmount } }, data: { balance: { decrement: disbursementAmount } } });
+      if (walletDebit.count !== 1) throw new BadRequestError('The Chama wallet does not have enough funds to disburse this loan');
+      const claimedLoan = await tx.loan.updateMany({ where: { id: loanId, organizationId: id, status: LoanStatus.APPROVED }, data: { status: LoanStatus.ACTIVE, disbursedAt: new Date() } });
+      if (claimedLoan.count !== 1) throw new BadRequestError('This loan has already been disbursed or is no longer approved');
+      const updated = await tx.loan.findUniqueOrThrow({ where: { id: loanId }, include: { borrower: true, requestedBy: true, reviewedBy: true, guarantors: { include: { member: true } }, repayments: true } });
+      await tx.transaction.create({ data: { chamaId: linkedChamaId, organizationId: id, type: 'LOAN_DISBURSEMENT', amount: disbursementAmount, toMemberId: existing.borrowerId, reference: `LOAN-DISBURSEMENT-${loanId}`, idempotencyKey: `organization:${id}:loan-disbursement:${loanId}`, status: TransactionStatus.COMPLETED, metadata: { loanId } } });
       await tx.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'Loan', entityId: loanId, oldValues: existing, newValues: updated, metadata: { disbursed: true } } });
       return updated;
     });
@@ -544,12 +550,12 @@ router.post(
         return;
       }
     }
-    const result = await runFinancialTransaction(async (tx: any) => {
+    const result = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
       const reference = payload.reference || `LOAN-REPAYMENT-${randomUUID()}`;
-      const repayment = await tx.loanRepayment.create({ data: { organizationId: id, loanId, memberId: existing.borrowerId, recordedById: req.user!.id, amount: payload.amount, paymentMethod: payload.paymentMethod as any, reference, status: 'PAID', repaidAt: new Date(), paidAt: new Date() } });
+      const repayment = await tx.loanRepayment.create({ data: { organizationId: id, loanId, memberId: existing.borrowerId, recordedById: req.user!.id, amount: payload.amount, paymentMethod: payload.paymentMethod as PaymentMethod, reference, status: 'PAID', repaidAt: new Date(), paidAt: new Date() } });
       const nextBalance = outstanding - payload.amount;
-      const loan = await tx.loan.update({ where: { id: loanId }, data: { balance: nextBalance, status: nextBalance <= 0 ? 'PAID' : existing.status } });
-      await tx.transaction.create({ data: { chamaId: linkedChamaId, organizationId: id, type: 'LOAN_PAYMENT', amount: payload.amount, fromMemberId: existing.borrowerId, reference, idempotencyKey: ledgerKey, status: 'COMPLETED', metadata: { loanId, repaymentId: repayment.id, paymentMethod: payload.paymentMethod } } });
+      const loan = await tx.loan.update({ where: { id: loanId }, data: { balance: nextBalance, status: nextBalance <= 0 ? LoanStatus.PAID : existing.status as LoanStatus } });
+      await tx.transaction.create({ data: { chamaId: linkedChamaId, organizationId: id, type: 'LOAN_PAYMENT', amount: payload.amount, fromMemberId: existing.borrowerId, reference, idempotencyKey: ledgerKey, status: TransactionStatus.COMPLETED, metadata: { loanId, repaymentId: repayment.id, paymentMethod: payload.paymentMethod } } });
       await tx.organizationWallet.update({ where: { organizationId: id }, data: { balance: { increment: payload.amount } } });
       await tx.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'LoanRepayment', entityId: repayment.id, oldValues: existing, newValues: { repayment, loan }, metadata: { repaymentRecorded: true, idempotencyKey: ledgerKey } } });
       return { repayment, loan };

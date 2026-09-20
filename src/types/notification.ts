@@ -82,6 +82,10 @@ export interface AuditLogData {
   metadata?: any;     // Additional context data
   ipAddress?: string; // Client IP address
   userAgent?: string; // Client user agent
+  requestId?: string;
+  reason?: string;
+  transactionId?: string;
+  approvalChain?: any;
   createdAt: Date;
 }
 
@@ -204,6 +208,10 @@ export interface CreateAuditLogRequest {
   metadata?: any;
   ipAddress?: string;
   userAgent?: string;
+  requestId?: string;
+  reason?: string;
+  transactionId?: string;
+  approvalChain?: any;
 }
 
 // Utility Types

@@ -9,10 +9,35 @@ import { logger } from '../config/logger';
 import { subscriptionLifecycleService } from '../services/subscriptionLifecycleService';
 import { billingDocumentService } from '../services/billingDocumentService';
 import { config } from '../config/environment';
+import { randomUUID } from 'node:crypto';
 
 const router = Router();
 
 const organizationIdSchema = z.string().cuid();
+
+router.post('/funnel-events', asyncHandler(async (req: Request, res: Response) => {
+  const input = z.object({
+    eventType: z.enum(['LANDING_VISITED', 'SIGNUP_STARTED', 'ACCOUNT_CREATED', 'CHAMA_CREATED', 'FIRST_MEMBER_INVITED', 'FIRST_CONTRIBUTION', 'PREMIUM_FEATURE_ATTEMPTED', 'PRICING_VIEWED', 'CHECKOUT_STARTED', 'PAID']),
+    visitorId: z.string().trim().min(8).max(100).optional(),
+    organizationId: organizationIdSchema.optional(),
+    plan: z.enum(['FREE', 'STARTER', 'GROWTH', 'PRO', 'INVESTMENT_AUTOMATION', 'ENTERPRISE']).optional(),
+    billingCycle: z.enum(['MONTHLY', 'ANNUAL']).optional(),
+  }).parse(req.body);
+  if (!input.visitorId && !input.organizationId) throw new BadRequestError('Visitor or organization context is required');
+  if (input.organizationId && !req.user?.id) throw new ForbiddenError('Authentication is required for organization funnel events');
+  if (input.organizationId) await requireOrganizationBillingAccess(input.organizationId, req.user!.id);
+  await prisma.commercialFunnelEvent.create({ data: { eventType: input.eventType, visitorId: input.visitorId, userId: req.user?.id, organizationId: input.organizationId, plan: input.plan, billingCycle: input.billingCycle } });
+  res.status(201).json({ recorded: true });
+}));
+
+router.get('/referrals/me', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user?.id) throw new BadRequestError('User not authenticated');
+  const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { referralCode: true } });
+  const code = user?.referralCode ?? `CHAMA-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+  if (!user?.referralCode) await prisma.user.update({ where: { id: req.user.id }, data: { referralCode: code } });
+  const referrals = await prisma.referral.findMany({ where: { referrerId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 100, select: { code: true, status: true, rewardMonths: true, convertedAt: true, createdAt: true, referredOrganization: { select: { id: true, name: true } } } });
+  res.json({ code, reward: 'One month free after a referred organization purchases an annual plan', referrals });
+}));
 
 async function requireOrganizationBillingAccess(organizationId: string, userId: string, requireAdmin = false) {
   const membership = await prisma.organizationMember.findUnique({
@@ -26,6 +51,26 @@ async function requireOrganizationBillingAccess(organizationId: string, userId: 
   }
   return membership;
 }
+
+const smsCreditPacks = { 100: 100, 500: 450, 1000: 800 } as const;
+
+router.post('/sms-credits/purchase', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user?.id) throw new BadRequestError('User not authenticated');
+  const input = z.object({ organizationId: organizationIdSchema, credits: z.union([z.literal(100), z.literal(500), z.literal(1000)]), phone: z.string().trim().min(9) }).parse(req.body);
+  await requireOrganizationBillingAccess(input.organizationId, req.user.id, true);
+  const purchase = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.create({ data: { organizationId: input.organizationId, requestedById: req.user!.id, type: 'SMS_CREDIT_PURCHASE', quantity: input.credits, amount: smsCreditPacks[input.credits], metadata: { packCredits: input.credits } } });
+    return tx.smsCreditPurchase.create({ data: { organizationId: input.organizationId, requestedById: req.user!.id, credits: input.credits, amount: smsCreditPacks[input.credits], orderId: order.id } });
+  });
+  try {
+    const result = await subscriptionPaymentService.initiate({ phone: input.phone, amount: smsCreditPacks[input.credits], reference: `SMS-${purchase.id}` });
+    const updated = await prisma.smsCreditPurchase.update({ where: { id: purchase.id }, data: { checkoutRequestId: result.CheckoutRequestID } });
+    res.status(202).json({ purchase: updated, customerMessage: result.CustomerMessage || 'Check your phone and enter your M-Pesa PIN.' });
+  } catch (error) {
+    await prisma.smsCreditPurchase.update({ where: { id: purchase.id }, data: { status: 'FAILED' } });
+    throw new BadRequestError((error as Error).message);
+  }
+}));
 
 router.get('/plans', (_req, res) => res.json({ plans: subscriptionPlans }));
 
@@ -81,6 +126,7 @@ router.post('/custom-request', authenticate, asyncHandler(async (req: Request, r
     contactName: z.string().trim().min(2).max(120),
     contactEmail: z.string().trim().email().max(200),
     contactPhone: z.string().trim().max(30).optional().or(z.literal('')),
+    serviceType: z.enum(['ASSISTED_SETUP', 'DATA_MIGRATION', 'OFFICIAL_TRAINING', 'SMS_CREDITS', 'CHAMA_VAULT', 'ENTERPRISE_IMPLEMENTATION']).default('ENTERPRISE_IMPLEMENTATION'),
     estimatedMembers: z.coerce.number().int().positive().max(10_000_000).optional(),
     requirements: z.string().trim().min(20, 'Please provide at least 20 characters describing your requirements.').max(5000),
     preferredTimeline: z.string().trim().max(120).optional().or(z.literal('')),
@@ -97,6 +143,7 @@ router.post('/custom-request', authenticate, asyncHandler(async (req: Request, r
       contactName: input.contactName,
       contactEmail: input.contactEmail,
       contactPhone: input.contactPhone || null,
+      serviceType: input.serviceType,
       estimatedMembers: input.estimatedMembers,
       requirements: input.requirements,
       preferredTimeline: input.preferredTimeline || null,
@@ -124,6 +171,29 @@ router.post('/callback', asyncHandler(async (req: Request, res: Response) => {
   }
 
   const request = await prisma.planChangeRequest.findUnique({ where: { checkoutRequestId } });
+  if (!request) {
+    const smsPurchase = await prisma.smsCreditPurchase.findUnique({ where: { checkoutRequestId } });
+    if (smsPurchase) {
+      const items = callback.CallbackMetadata?.Item ?? [];
+      const value = (name: string) => items.find((item) => item.Name === name)?.Value;
+      const receipt = String(value('MpesaReceiptNumber') ?? '');
+      const amount = Number(value('Amount'));
+      if (callback.ResultCode === 0 && receipt && amount === Number(smsPurchase.amount)) {
+        await prisma.$transaction(async (tx) => {
+          const claimed = await tx.smsCreditPurchase.updateMany({ where: { id: smsPurchase.id, status: 'PENDING' }, data: { status: 'PAID', mpesaReceipt: receipt, paidAt: new Date() } });
+          if (claimed.count !== 1) return;
+          const organization = await tx.organization.findUniqueOrThrow({ where: { id: smsPurchase.organizationId }, select: { chama: { select: { id: true } } } });
+          if (!organization.chama?.id) throw new BadRequestError('Organization is not linked to a Chama');
+          await tx.organizationSmsCredit.upsert({ where: { organizationId: smsPurchase.organizationId }, create: { organizationId: smsPurchase.organizationId, balance: smsPurchase.credits, consumed: 0 }, update: { balance: { increment: smsPurchase.credits } } });
+          const transaction = await tx.transaction.upsert({ where: { idempotencyKey: `SMS_CREDITS:${smsPurchase.id}` }, update: {}, create: { chamaId: organization.chama.id, organizationId: smsPurchase.organizationId, type: 'SMS_CREDIT_PURCHASE', amount: smsPurchase.amount, reference: `SMS-CREDITS-${receipt}`, idempotencyKey: `SMS_CREDITS:${smsPurchase.id}`, status: 'COMPLETED', metadata: { purchaseId: smsPurchase.id, receipt, credits: smsPurchase.credits } } });
+          if (smsPurchase.orderId) await tx.order.update({ where: { id: smsPurchase.orderId }, data: { status: 'PAID', paymentTransactionId: transaction.id, fulfilledAt: new Date() } });
+        });
+        return res.json({ ResultCode: 0, ResultDesc: 'SMS credits purchased' });
+      }
+      await prisma.smsCreditPurchase.update({ where: { id: smsPurchase.id }, data: { status: 'FAILED' } });
+      return res.json({ ResultCode: 0, ResultDesc: 'SMS credit purchase requires review' });
+    }
+  }
   if (!request) {
     logger.warn('Subscription callback does not match a checkout', { checkoutRequestId });
     return res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
@@ -162,10 +232,53 @@ router.post('/callback', asyncHandler(async (req: Request, res: Response) => {
         create: { userId: request.userId, plan: request.requestedPlan, status: 'ACTIVE', currentPeriodStart: now, currentPeriodEnd: periodEnd, provider: 'M_PESA', providerReference: receipt },
         update: { plan: request.requestedPlan, status: 'ACTIVE', currentPeriodStart: now, currentPeriodEnd: periodEnd, gracePeriodEnd: null, cancelAtPeriodEnd: false, provider: 'M_PESA', providerReference: receipt },
       });
+    const referralConversion = request.organizationId && request.billingCycle === 'ANNUAL'
+      ? prisma.referral.updateMany({
+          where: { referredOrganizationId: request.organizationId, status: 'REGISTERED' },
+          data: { status: 'CONVERTED', convertedAt: now },
+        })
+      : prisma.$executeRaw`SELECT 1`;
     await prisma.$transaction([
       prisma.planChangeRequest.update({ where: { id: request.id }, data: { status: 'COMPLETED', receiptNumber: receipt, paidAt: now, callbackPayload } }),
       activateSubscription,
+      referralConversion,
+      prisma.commercialFunnelEvent.create({ data: { eventType: 'PAID', userId: request.userId, organizationId: request.organizationId ?? undefined, plan: request.requestedPlan, billingCycle: request.billingCycle } }),
     ]);
+    if (!request.organizationId) {
+      await prisma.$transaction(async (tx) => {
+        const subscription = await tx.subscription.findUnique({ where: { userId: request.userId } });
+        const credit = await tx.subscriptionCredit.findFirst({ where: { userId: request.userId, appliedAt: null }, orderBy: { createdAt: 'asc' } });
+        if (!subscription || !credit) return;
+        const claimed = await tx.subscriptionCredit.updateMany({ where: { id: credit.id, appliedAt: null }, data: { appliedAt: now, appliedSubscriptionId: subscription.id } });
+        if (claimed.count !== 1) return;
+        const periodEnd = subscription.currentPeriodEnd && subscription.currentPeriodEnd > now ? new Date(subscription.currentPeriodEnd) : now;
+        periodEnd.setMonth(periodEnd.getMonth() + credit.months);
+        await tx.subscription.update({ where: { id: subscription.id }, data: { currentPeriodEnd: periodEnd } });
+      });
+    }
+    if (request.organizationId && request.billingCycle === 'ANNUAL') {
+      const convertedReferral = await prisma.referral.findFirst({
+        where: { referredOrganizationId: request.organizationId, status: 'CONVERTED' },
+        include: { referrer: true, referredOrganization: { select: { name: true } } },
+      });
+      if (convertedReferral) {
+        await prisma.notification.upsert({
+          where: { dedupeKey: `referral:${convertedReferral.id}:converted` },
+          update: {},
+          create: {
+            dedupeKey: `referral:${convertedReferral.id}:converted`,
+            recipientId: convertedReferral.referrerId,
+            type: 'GENERAL_UPDATE',
+            priority: 'IMPORTANT',
+            title: 'Referral reward earned',
+            message: `${convertedReferral.referredOrganization?.name ?? 'Your referred Chama'} purchased an annual CHAMA360 plan. Your one-month referral reward is ready for review.`,
+            status: 'DELIVERED',
+            sentAt: now,
+            channels: { create: [{ type: 'IN_APP', address: convertedReferral.referrerId, status: 'DELIVERED', deliveredAt: now }] },
+          },
+        });
+      }
+    }
     await billingDocumentService.ensureForPayment(request.id);
   } else {
     await prisma.planChangeRequest.update({ where: { id: request.id }, data: { status: 'FAILED', failureReason: callback.ResultDesc || 'Payment was not completed', callbackPayload } });
@@ -180,7 +293,8 @@ router.get('/me', authenticate, asyncHandler(async (req: Request, res: Response)
   const requests = await prisma.planChangeRequest.findMany({ where: { userId: req.user!.id, organizationId }, orderBy: { createdAt: 'desc' }, take: 5 });
   const daysRemaining = subscription.currentPeriodEnd ? Math.ceil((subscription.currentPeriodEnd.getTime() - Date.now()) / 86400000) : null;
   const memberCount = organizationId ? await prisma.organizationMember.count({ where: { organizationId, status: 'ACTIVE' } }) : null;
-  res.json({ subscription, scope: organizationId ? 'ORGANIZATION' : 'USER', features: subscriptionPlans[subscription.plan].features, requests, usage: { members: memberCount, memberLimit: subscriptionPlans[subscription.plan].memberLimit }, renewal: { daysRemaining, renewable: subscription.plan !== 'FREE', inGracePeriod: subscription.status === 'PAST_DUE' } });
+  const smsCredits = organizationId ? await prisma.organizationSmsCredit.findUnique({ where: { organizationId }, select: { balance: true, consumed: true } }) : null;
+  res.json({ subscription, scope: organizationId ? 'ORGANIZATION' : 'USER', features: subscriptionPlans[subscription.plan].features, requests, usage: { members: memberCount, memberLimit: subscriptionPlans[subscription.plan].memberLimit, storageLimitMb: subscriptionPlans[subscription.plan].storageLimitMb, smsCredits: smsCredits ?? { balance: 0, consumed: 0 } }, renewal: { daysRemaining, renewable: subscription.plan !== 'FREE', inGracePeriod: subscription.status === 'PAST_DUE' } });
 }));
 
 router.post('/request-upgrade', authenticate, asyncHandler(async (req: Request, res: Response) => {

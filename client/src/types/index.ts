@@ -218,6 +218,7 @@ export interface User {
   mfaEnabled?: boolean;
   kycStatus: 'PENDING' | 'VERIFIED' | 'REJECTED';
   createdAt: string;
+  platformRole?: 'PLATFORM_OWNER' | 'PLATFORM_ADMIN' | 'FINANCE_ADMIN' | 'SUPPORT_ADMIN' | null;
 }
 
 export interface Chama {

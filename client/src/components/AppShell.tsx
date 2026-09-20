@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Activity, ArrowLeft, Bell, CalendarDays, Crown, FileText, HeartHandshake, LineChart, LogOut, Menu, Plus, QrCode, RefreshCw, Settings, ShieldCheck, Upload, UserCircle2, UserPlus, Vote, Wallet } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, Bell, CalendarDays, CheckSquare, Crown, FileText, HeartHandshake, LineChart, LogOut, Menu, Plus, QrCode, RefreshCw, Settings, ShieldCheck, Upload, UserCircle2, UserPlus, Vote, Wallet } from 'lucide-react';
 import { BottomSheet, Button, IconButton } from '../design-system';
 import { BottomNav } from './BottomNav';
 import { BrandLockup, BrandMark } from './BrandLogo';
@@ -32,6 +32,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
   const showUpgrade = useSubscriptionStore((state) => state.showUpgrade);
   const { currentOrganization, activeOrganizationId, loading, error, refreshOrganizations } = useOrganizationWorkspace();
   const roleName = (currentOrganization?.myRole ?? '').toUpperCase();
+  const isPlatformAdmin = Boolean(useAuthStore((state) => state.user?.platformRole));
   const canManageWorkspace = !currentOrganization || ['OWNER', 'FOUNDER', 'ADMIN'].includes(roleName);
   const canUseMpesaAdmin = ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'].includes(roleName);
   const canViewAuditTrail = ['OWNER', 'FOUNDER', 'TREASURER', 'AUDITOR', 'ADMIN'].includes(roleName);
@@ -133,9 +134,10 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
   };
 
   const quickSheetItems = [
-    ...(activeOrganizationId ? [{ label: 'Pay contribution', to: ROUTES.chama.contributions(activeOrganizationId), icon: Wallet, tone: 'green' as const }] : []),
-    ...(activeOrganizationId ? [{ label: 'Members', to: ROUTES.chama.members(activeOrganizationId), icon: UserCircle2, tone: 'blue' as const }] : []),
-    ...(activeOrganizationId && currentOrganization?.enabledModules?.welfare ? [{ label: 'Welfare', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' as const }] : []),
+    ...(activeOrganizationId ? [{ label: 'Contribute', to: ROUTES.chama.contributions(activeOrganizationId), icon: Wallet, tone: 'green' as const }] : []),
+    ...(activeOrganizationId && currentOrganization?.enabledModules?.loans ? [{ label: 'Request Loan', to: ROUTES.chama.loans(activeOrganizationId), icon: Wallet, tone: 'blue' as const }] : []),
+    ...(activeOrganizationId && currentOrganization?.enabledModules?.welfare ? [{ label: 'Welfare Claim', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' as const }] : []),
+    ...(activeOrganizationId ? [{ label: 'Invite', to: ROUTES.chama.members(activeOrganizationId), icon: UserPlus, tone: 'gold' as const }] : []),
     { label: 'Create Chama', to: ROUTES.app.createChama, icon: Plus, tone: 'green' },
     { label: 'Join Chama', to: ROUTES.app.joinChama, icon: UserPlus, tone: 'blue' },
     { label: 'Notifications', to: ROUTES.app.notifications, icon: Bell, tone: 'gold' },
@@ -155,6 +157,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
     ...(canViewAuditTrail ? [{ label: 'Audit Trail', to: ROUTES.more.auditLogs, icon: Activity, tone: 'navy' as const }] : []),
     ...(currentOrganization?.enabledModules?.investments && activeOrganizationId ? [{ label: 'Investments', to: ROUTES.chama.investments(activeOrganizationId), icon: LineChart, tone: 'teal' as const }] : []),
     { label: 'Help', to: ROUTES.more.help, icon: HeartHandshake, tone: 'pink' },
+    ...(isPlatformAdmin ? [{ label: 'Platform Console', to: ROUTES.platform.home, icon: Crown, tone: 'gold' as const }] : []),
     ...(canUseMpesaAdmin ? [{ label: 'M-Pesa', to: ROUTES.admin.mpesa, icon: Wallet, tone: 'teal' as const }] : []),
     { label: 'Logout', to: ROUTES.auth.login, icon: LogOut, tone: 'rose' },
   ] as const;
@@ -169,6 +172,8 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
         { label: 'Members', to: ROUTES.chama.members(activeOrganizationId), icon: UserCircle2, tone: 'green' },
         { label: 'Contributions', to: ROUTES.chama.contributions(activeOrganizationId), icon: Wallet, tone: 'emerald' },
         { label: 'Welfare', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' },
+        { label: 'Approvals', to: ROUTES.chama.approvals(activeOrganizationId), icon: CheckSquare, tone: 'gold' },
+        ...(canUseMpesaAdmin ? [{ label: 'Financial Exceptions', to: ROUTES.chama.financialExceptions(activeOrganizationId), icon: AlertTriangle, tone: 'rose' }] : []),
         { label: 'Reports', to: ROUTES.chama.reports(activeOrganizationId), icon: ShieldCheck, tone: 'purple' },
       ]
     : [

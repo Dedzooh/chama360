@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Heart, Home, Menu, Plus, Users, Wallet } from 'lucide-react';
+import { Home, Menu, Plus, Users, Wallet } from 'lucide-react';
 import { ROUTES } from '../config/routes';
 
 interface BottomNavProps {
@@ -14,8 +14,8 @@ const getLabel = (value: string) => {
       return 'Home';
     case 'pay':
       return 'Pay';
-    case 'welfare':
-      return 'Welfare';
+    case 'chamas':
+      return 'Chamas';
     case 'activity':
       return 'Activity';
     default:
@@ -26,13 +26,12 @@ const getLabel = (value: string) => {
 export const BottomNav = ({ activeOrganizationId, onMoreToggle, onQuickAction }: BottomNavProps) => {
   const location = useLocation();
   const payLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/contributions` : ROUTES.app.myChamas;
-  const welfareLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/welfare` : ROUTES.app.myChamas;
-  const activityLink = activeOrganizationId ? `/chamas/${activeOrganizationId}/dashboard` : ROUTES.app.notifications;
+  const activityLink = ROUTES.app.notifications;
 
   const items = [
     { value: 'home', to: ROUTES.app.home, icon: Home },
+    { value: 'chamas', to: ROUTES.app.myChamas, icon: Users },
     { value: 'pay', to: payLink, icon: Wallet },
-    { value: 'welfare', to: welfareLink, icon: Heart },
     { value: 'activity', to: activityLink, icon: Users },
     { value: 'more', icon: Menu },
   ] as const;
@@ -42,10 +41,10 @@ export const BottomNav = ({ activeOrganizationId, onMoreToggle, onQuickAction }:
       ? 'home'
       : location.pathname.includes('/contributions') || location.pathname.includes('/loans')
         ? 'pay'
-        : location.pathname.includes('/welfare')
-          ? 'welfare'
-          : location.pathname.includes('/notifications') || location.pathname.includes('/reports') || location.pathname.includes('/meetings')
-            ? 'activity'
+        : location.pathname.includes('/notifications') || location.pathname.includes('/reports') || location.pathname.includes('/meetings')
+          ? 'activity'
+          : location.pathname.includes('/chamas')
+            ? 'chamas'
             : 'more';
 
   return (

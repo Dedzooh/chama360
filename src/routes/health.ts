@@ -3,6 +3,7 @@ import { prisma } from '../config/database';
 import { redis } from '../config/redis';
 import { config } from '../config/environment';
 import { asyncHandler } from '../middleware/errorHandler';
+import os from 'node:os';
 
 export const healthRouter = Router();
 
@@ -179,3 +180,22 @@ healthRouter.get('/live', (_req: Request, res: Response) => {
     uptime: process.uptime(),
   });
 });
+
+healthRouter.get('/operations', asyncHandler(async (_req: Request, res: Response) => {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [failedCallbacks, reconciliationFailures, failedPayments, failedSms, failedJobs, storage] = await Promise.all([
+    prisma.mpesaCallbackInbox.count({ where: { status: 'PENDING', lastError: { not: null } } }),
+    prisma.transaction.count({ where: { status: 'RECONCILIATION_REQUIRED' } }),
+    prisma.planChangeRequest.count({ where: { status: 'FAILED', updatedAt: { gte: since } } }),
+    prisma.notificationChannel.count({ where: { type: 'SMS', status: 'FAILED', createdAt: { gte: since } } }),
+    prisma.backgroundJob.count({ where: { status: 'FAILED', updatedAt: { gte: since } } }),
+    prisma.organizationDocument.aggregate({ _sum: { sizeBytes: true }, _count: { _all: true } }),
+  ]);
+  res.json({
+    timestamp: new Date().toISOString(),
+    process: { uptimeSeconds: process.uptime(), memory: process.memoryUsage(), loadAverage: os.loadavg(), cpuCount: os.cpus().length },
+    database: { failedCallbacks, reconciliationFailures, failedPayments, failedJobs },
+    notifications: { failedSms },
+    storage: { usedBytes: Number(storage._sum.sizeBytes ?? 0), documentCount: storage._count._all },
+  });
+}));

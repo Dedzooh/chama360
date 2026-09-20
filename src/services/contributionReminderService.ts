@@ -1,6 +1,7 @@
 import { prisma } from '../config/database';
 import { config } from '../config/environment';
 import { logger } from '../config/logger';
+import { toDecimal } from '../utils/decimal';
 
 type NotificationRules = {
   inApp?: boolean;
@@ -63,7 +64,7 @@ export class ContributionReminderService {
         let stage: string | null = null;
         let title = '';
         let message = '';
-        const totalDue = Number(contribution.amount) + Number(contribution.penalties);
+        const totalDue = toDecimal(contribution.amount).plus(toDecimal(contribution.penalties)).toNumber();
 
         if (beforeDays.includes(daysUntil)) {
           stage = `before-${daysUntil}`;

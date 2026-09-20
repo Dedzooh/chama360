@@ -1,5 +1,6 @@
 import winston from 'winston';
 import path from 'path';
+import { currentRequestId } from '../middleware/requestContext';
 
 // Define log levels
 const levels = {
@@ -55,6 +56,10 @@ const redactLogValue = (value: unknown, seen = new WeakSet<object>()): unknown =
 };
 
 const redactSensitiveData = winston.format((info) => redactLogValue(info) as typeof info);
+const addRequestId = winston.format((info) => {
+  info.requestId = currentRequestId() ?? 'no-request';
+  return info;
+});
 
 // Define different log formats
 const logFormat = winston.format.combine(
@@ -62,12 +67,13 @@ const logFormat = winston.format.combine(
   redactSensitiveData(),
   winston.format.colorize({ all: true }),
   winston.format.printf(
-    (info) => `${info.timestamp} ${info.level}: ${info.message}`
+    (info) => `${info.timestamp} ${info.level} [${currentRequestId() ?? 'no-request'}]: ${info.message}`
   )
 );
 
 const fileLogFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }),
+  addRequestId(),
   winston.format.errors({ stack: true }),
   redactSensitiveData(),
   winston.format.json()

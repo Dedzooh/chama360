@@ -6,6 +6,9 @@ import { prisma } from '../config/database';
 
 const asString = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
 
+export const isSubscriptionFeatureActive = (subscription: { status: string; gracePeriodEnd?: Date | null }, now = new Date()) =>
+  ['ACTIVE', 'PAST_DUE'].includes(subscription.status) && (!subscription.gracePeriodEnd || subscription.gracePeriodEnd > now);
+
 async function resolveOrganizationId(req: Request): Promise<string> {
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
   const explicit = asString(req.params.organizationId) ?? asString(req.params.id) ?? asString(body.organizationId) ?? asString(req.query.organizationId);
@@ -66,8 +69,10 @@ export const requireSubscriptionFeature = (feature: string) => async (req: Reque
     });
     if (membership?.status !== 'ACTIVE') return next(new ForbiddenError('Active organization membership is required'));
 
+    await prisma.commercialFunnelEvent.create({ data: { eventType: 'PREMIUM_FEATURE_ATTEMPTED', userId: req.user.id, organizationId } });
+
     const subscription = await subscriptionLifecycleService.reconcileOrganization(organizationId);
-    const active = ['ACTIVE', 'PAST_DUE'].includes(subscription.status) && (!subscription.gracePeriodEnd || subscription.gracePeriodEnd > new Date());
+    const active = isSubscriptionFeatureActive(subscription);
     if (!active || !planHasFeature(subscription.plan, feature)) {
       const requiredPlan = Object.entries(subscriptionPlans).find(([, plan]) => plan.features.includes(feature))?.[0] ?? 'PRO';
       return next(new UpgradeRequiredError(feature, requiredPlan));

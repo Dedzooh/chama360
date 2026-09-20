@@ -400,7 +400,7 @@ export class ContributionService {
       });
 
       const ledgerTransaction = await LedgerService.recordContributionPayment(
-        { transaction: tx },
+        tx,
         {
           organizationId: contribution.organizationId ?? null,
           chamaId: contribution.chamaId,

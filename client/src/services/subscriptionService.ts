@@ -6,6 +6,7 @@ export interface SubscriptionRecord {
   status: 'ACTIVE' | 'PAST_DUE' | 'CANCELLED' | 'EXPIRED';
   currentPeriodStart: string;
   currentPeriodEnd?: string | null;
+  trialEndsAt?: string | null;
   gracePeriodEnd?: string | null;
   cancelAtPeriodEnd: boolean;
 }
@@ -37,11 +38,15 @@ export const subscriptionService = {
   },
   getCurrent: async (organizationId?: string | null) => {
     const response = await api.get('/subscriptions/me', { params: { organizationId: organizationId || undefined } });
-    return response.data as { subscription: SubscriptionRecord; features: string[]; requests: UpgradeRequest[]; renewal: { daysRemaining: number | null; renewable: boolean; inGracePeriod: boolean } };
+    return response.data as { subscription: SubscriptionRecord; features: string[]; requests: UpgradeRequest[]; usage?: { storageLimitMb: number | null; members?: number | null; memberLimit?: number | null }; renewal: { daysRemaining: number | null; renewable: boolean; inGracePeriod: boolean } };
   },
   checkout: async (requestId: string, phone: string) => {
     const response = await api.post('/subscriptions/checkout', { requestId, phone });
     return response.data as { request: UpgradeRequest; customerMessage: string };
+  },
+  purchaseSmsCredits: async (organizationId: string, credits: 100 | 500 | 1000, phone: string) => {
+    const response = await api.post('/subscriptions/sms-credits/purchase', { organizationId, credits, phone });
+    return response.data as { purchase: { id: string; amount: string; credits: number; status: string }; customerMessage: string };
   },
   getRequest: async (requestId: string) => {
     const response = await api.get(`/subscriptions/requests/${requestId}`);

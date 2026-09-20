@@ -1,0 +1,1 @@
+export { MpesaAdmin } from './MpesaAdminPage';

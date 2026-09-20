@@ -28,9 +28,23 @@ $env:BACKUP_FILE = '.\database\20260918T000000Z.dump.enc'
 bash scripts/restore-postgres-backup.sh
 npm run type-check
 npm run test:offline
+bash scripts/verify-restored-financial-data.sh
 ```
 
-Verify row counts, recent ledger entries, welfare approvals, M-Pesa inbox events, and application login before destroying the isolated restore target. Record the restore duration and result as an operational control.
+The verification script checks organizations, members, contributions, loans, welfare claims, transactions, audit logs, reconciliation exceptions, wallet totals, completed ledger totals, paid contributions, outstanding loans, paid welfare totals, negative wallets, and missing idempotency keys. Create a production-like fixture before the dump with members, a contribution, a loan, and a welfare transaction, then compare the printed totals before and after restore. Record the restore duration and result as an operational control before destroying the isolated restore target.
+
+## Production monitoring
+
+The public liveness/readiness endpoints are:
+
+```text
+/health/live
+/health/ready
+/health/detailed
+/health/operations
+```
+
+`/health/operations` reports recent failed subscription payments, failed SMS delivery, failed background jobs, pending M-Pesa callbacks with errors, reconciliation-required transactions, process memory/uptime/load, and organization document storage usage. Alert on non-200 readiness, database/Redis unhealthy status, any reconciliation-required increase, failed callbacks, failed jobs, failed SMS spikes, negative wallet balances, and backup container/object-store failure. Backup success must also be checked externally from the backup container logs and the backup bucket's latest object timestamp; do not rely on API liveness as proof of backup success.
 
 ## Operational notes
 

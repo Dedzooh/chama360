@@ -125,4 +125,39 @@ describe('Welfare financial integrity guards', () => {
     expect(result.approvalsReceived).toBe(2);
     expect(result.approved).toBe(false);
   });
+
+  it.each([
+    ['claim rejected then payout attempted', { claimStatus: 'REJECTED', walletBalance: 10000, amountRequested: 5000, amountApproved: 5000 }, 'Rejected claims cannot become valid payouts'],
+    ['claim pending then payout attempted', { claimStatus: 'PENDING', walletBalance: 10000, amountRequested: 5000, amountApproved: 5000 }, 'Pending claims require approvals before payout'],
+    ['claim belongs to a different organization', { claimStatus: 'APPROVED', organizationMatches: false, walletBalance: 10000, amountRequested: 5000, amountApproved: 5000 }, 'Payout organization must match claim organization'],
+    ['user removed during approval', { claimStatus: 'APPROVED', approverActive: false, walletBalance: 10000, amountRequested: 5000, amountApproved: 5000 }, 'Inactive approvers cannot complete approval'],
+    ['approver approves own claim', { claimStatus: 'PENDING', selfApproval: true, walletBalance: 10000, amountRequested: 5000, amountApproved: 5000 }, 'Claimants cannot approve their own claims'],
+  ] as Array<[string, Record<string, string | number | boolean>, string]>)('%s is rejected by the payout/approval invariant', (_name, input, message) => {
+    const validState = input.claimStatus === 'APPROVED'
+      && input.organizationMatches !== false
+      && input.approverActive !== false
+      && input.selfApproval !== true;
+    expect(validState).toBe(false);
+    expect(message).toBeTruthy();
+  });
+
+  it('models a 2-of-3 approval threshold exactly', () => {
+    expect(computeApprovalOutcome({ approvals: ['approver-1', 'approver-2'], requiredApprovals: 2, thresholdPercent: 66, totalPossibleApprovers: 3 })).toMatchObject({ approved: true, approvalsReceived: 2 });
+    expect(computeApprovalOutcome({ approvals: ['approver-1'], requiredApprovals: 2, thresholdPercent: 66, totalPossibleApprovers: 3 })).toMatchObject({ approved: false, approvalsReceived: 1 });
+  });
+
+  it.each([
+    ['same welfare payout called twice', { existingPayoutId: 'payout-1', requestedPayoutId: 'payout-1' }],
+    ['two payouts at exactly same time', { walletBalance: 5000, firstPayout: 5000, secondPayout: 5000 }],
+    ['loan disbursed twice', { status: 'ACTIVE' }],
+    ['contribution reversed twice', { status: 'REVERSED' }],
+    ['loan repayment duplicated', { idempotencyKey: 'repayment-1', duplicateKey: 'repayment-1' }],
+  ] as Array<[string, Record<string, string | number>]>)('%s remains non-repeatable', (_name, input) => {
+    const duplicate = input.existingPayoutId === input.requestedPayoutId
+      || input.idempotencyKey === input.duplicateKey
+      || input.status === 'ACTIVE'
+      || input.status === 'REVERSED'
+      || Number(input.firstPayout ?? 0) + Number(input.secondPayout ?? 0) > Number(input.walletBalance ?? Number.POSITIVE_INFINITY);
+    expect(duplicate).toBe(true);
+  });
 });

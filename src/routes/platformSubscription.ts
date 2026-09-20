@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../middleware/auth';
-import { requireSystemAdmin } from '../middleware/systemAdmin';
+import { isSelfPlatformOwnerDemotion, requirePlatformOwner, requireSystemAdmin } from '../middleware/systemAdmin';
 import { asyncHandler, BadRequestError, NotFoundError } from '../middleware/errorHandler';
 import { prisma } from '../config/database';
 import { getPlanPrice, subscriptionPlans } from '../config/subscriptions';
@@ -12,10 +12,44 @@ import { subscriptionPaymentService } from '../services/subscriptionPaymentServi
 const router = Router();
 router.use(authenticate, requireSystemAdmin);
 
+router.post('/sms-credits', asyncHandler(async (req: Request, res: Response) => {
+  const input = z.object({ organizationId: z.string().cuid(), credits: z.number().int().positive().max(1_000_000) }).parse(req.body);
+  const wallet = await prisma.organizationSmsCredit.upsert({
+    where: { organizationId: input.organizationId },
+    create: { organizationId: input.organizationId, balance: input.credits, consumed: 0 },
+    update: { balance: { increment: input.credits } },
+  });
+  res.status(201).json({ wallet, message: `${input.credits.toLocaleString()} SMS credits added.` });
+}));
+
 const planSchema = z.enum(['FREE', 'STARTER', 'GROWTH', 'PRO', 'INVESTMENT_AUTOMATION', 'ENTERPRISE']);
 const statusSchema = z.enum(['ACTIVE', 'PAST_DUE', 'CANCELLED', 'EXPIRED']);
 const paymentStatusSchema = z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED']);
 const estimatedMpesaFee = (amount: number) => Math.min(amount * 0.0055, 200);
+
+router.get('/access', asyncHandler(async (req: Request, res: Response) => {
+  res.json({ isPlatformAdmin: true, platformRole: req.user?.platformRole ?? null });
+}));
+
+router.get('/platform-admins', requirePlatformOwner, asyncHandler(async (_req: Request, res: Response) => {
+  const admins = await prisma.user.findMany({
+    where: { platformRole: { not: null } },
+    select: { id: true, email: true, firstName: true, lastName: true, platformRole: true, isActive: true, lastLoginAt: true, createdAt: true },
+    orderBy: [{ platformRole: 'asc' }, { createdAt: 'asc' }],
+  });
+  res.json({ admins });
+}));
+
+router.patch('/platform-admins/:id', requirePlatformOwner, asyncHandler(async (req: Request, res: Response) => {
+  const userId = z.string().cuid().parse(req.params.id);
+  const input = z.object({ role: z.enum(['PLATFORM_OWNER', 'PLATFORM_ADMIN', 'FINANCE_ADMIN', 'SUPPORT_ADMIN']).nullable() }).parse(req.body);
+  if (req.user && isSelfPlatformOwnerDemotion(req.user, userId, input.role)) throw new BadRequestError('A platform owner cannot remove their own owner access.');
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, firstName: true, lastName: true } });
+  if (!user) throw new NotFoundError('Platform administrator account not found');
+  const updated = await prisma.user.update({ where: { id: userId }, data: { platformRole: input.role }, select: { id: true, email: true, firstName: true, lastName: true, platformRole: true, isActive: true, lastLoginAt: true, createdAt: true } });
+  await prisma.auditLog.create({ data: { action: 'UPDATE', entityType: 'PlatformRole', entityId: userId, userId: req.user!.id, oldValues: { email: user.email }, newValues: { platformRole: input.role }, metadata: { operation: 'PLATFORM_ROLE_UPDATED' }, ipAddress: req.ip, userAgent: req.get('User-Agent') } });
+  res.json({ admin: updated, message: input.role ? 'Platform role updated.' : 'Platform access removed.' });
+}));
 
 router.get('/custom-requests', asyncHandler(async (_req: Request, res: Response) => {
   const items = await prisma.customPlanRequest.findMany({
@@ -36,6 +70,39 @@ router.patch('/custom-requests/:id', asyncHandler(async (req: Request, res: Resp
   res.json({ request, message: 'Custom package request updated.' });
 }));
 
+router.get('/referrals', asyncHandler(async (_req: Request, res: Response) => {
+  const referrals = await prisma.referral.findMany({
+    where: { status: { in: ['CONVERTED', 'REWARDED'] } },
+    include: { referrer: { select: { id: true, firstName: true, lastName: true, email: true } }, referredOrganization: { select: { id: true, name: true } } },
+    orderBy: { convertedAt: 'desc' },
+    take: 100,
+  });
+  res.json({ referrals });
+}));
+
+router.patch('/referrals/:id/reward', asyncHandler(async (req: Request, res: Response) => {
+  const referralId = z.string().cuid().parse(req.params.id);
+  const referral = await prisma.referral.findUnique({ where: { id: referralId }, include: { referrer: true, referredOrganization: { select: { name: true } } } });
+  if (!referral || referral.status !== 'CONVERTED') throw new NotFoundError('Converted referral not found');
+  if (referral.rewardAppliedAt) throw new BadRequestError('Referral reward has already been issued');
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.referral.updateMany({ where: { id: referralId, status: 'CONVERTED', rewardAppliedAt: null }, data: { rewardAppliedAt: now, status: 'REWARDED' } });
+    if (claimed.count !== 1) throw new BadRequestError('Referral reward has already been issued');
+    const subscription = await tx.subscription.findUnique({ where: { userId: referral.referrerId } });
+    const paidSubscription = subscription && subscription.plan !== 'FREE' ? subscription : null;
+    const credit = await tx.subscriptionCredit.create({ data: { userId: referral.referrerId, referralId, months: referral.rewardMonths, appliedAt: paidSubscription ? now : null, appliedSubscriptionId: paidSubscription?.id ?? null } });
+    if (paidSubscription) {
+      const periodEnd = paidSubscription.currentPeriodEnd && paidSubscription.currentPeriodEnd > now ? new Date(paidSubscription.currentPeriodEnd) : now;
+      periodEnd.setMonth(periodEnd.getMonth() + referral.rewardMonths);
+      await tx.subscription.update({ where: { id: paidSubscription.id }, data: { currentPeriodEnd: periodEnd } });
+    }
+    return { credit, applied: subscription?.plan !== 'FREE' };
+  });
+  await prisma.notification.create({ data: { dedupeKey: `referral:${referralId}:rewarded`, recipientId: referral.referrerId, type: 'GENERAL_UPDATE', priority: 'IMPORTANT', title: 'Referral reward issued', message: `${referral.rewardMonths}-month CHAMA360 subscription credit ${result.applied ? 'has been applied to your subscription' : 'is available for your next subscription'}.`, status: 'DELIVERED', sentAt: now, channels: { create: [{ type: 'IN_APP', address: referral.referrerId, status: 'DELIVERED', deliveredAt: now }] } } });
+  res.json({ referral: { ...referral, rewardAppliedAt: now, status: 'REWARDED' }, credit: result.credit, message: result.applied ? 'Referral subscription credit applied.' : 'Referral subscription credit issued for the next subscription.' });
+}));
+
 router.get('/readiness', asyncHandler(async (_req: Request, res: Response) => {
   const checks = {
     database: true,
@@ -52,7 +119,7 @@ router.get('/summary', asyncHandler(async (_req: Request, res: Response) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-  const [subscriptions, paymentGroups, completedPayments, recentCompleted, creditNotes, recentCreditNotes, cancelledRecently, deliveryStatuses, deliveryTypes] = await Promise.all([
+  const [subscriptions, paymentGroups, completedPayments, recentCompleted, creditNotes, recentCreditNotes, cancelledRecently, deliveryStatuses, deliveryTypes, registeredUsers, createdOrganizations, memberGroups, contributionGroups, premiumOrganizations, checkoutRequests, newSubscriptions, renewalPayments, failedPayments, annualSubscriptions, monthlySubscriptions, monthRevenue, yearRevenue, pricingViews, funnelCheckoutStarts, funnelEvents] = await Promise.all([
     prisma.organizationSubscription.findMany({ include: { organization: { select: { id: true, name: true, members: { where: { status: 'ACTIVE' }, select: { id: true } } } } } }),
     prisma.planChangeRequest.groupBy({ by: ['status'], where: { organizationId: { not: null } }, _count: { _all: true } }),
     prisma.planChangeRequest.findMany({ where: { organizationId: { not: null }, status: 'COMPLETED' }, select: { amount: true, paidAt: true, checkoutRequestId: true } }),
@@ -62,12 +129,29 @@ router.get('/summary', asyncHandler(async (_req: Request, res: Response) => {
     prisma.organizationSubscription.count({ where: { status: 'CANCELLED', updatedAt: { gte: monthStart } } }),
     prisma.notificationChannel.groupBy({ by: ['status'], where: { notification: { organizationId: { not: null }, createdAt: { gte: thirtyDaysAgo } } }, _count: { _all: true } }),
     prisma.notificationChannel.groupBy({ by: ['type'], where: { notification: { organizationId: { not: null }, createdAt: { gte: thirtyDaysAgo } } }, _count: { _all: true } }),
+    prisma.user.count(),
+    prisma.organization.count(),
+    prisma.organizationMember.groupBy({ by: ['organizationId'], where: { status: 'ACTIVE' }, _count: { _all: true } }),
+    prisma.contribution.groupBy({ by: ['organizationId'], _count: { _all: true } }),
+    prisma.organizationSubscription.count({ where: { plan: { not: 'FREE' }, status: { in: ['ACTIVE', 'PAST_DUE'] } } }),
+    prisma.planChangeRequest.count({ where: { organizationId: { not: null }, status: { in: ['PENDING', 'PROCESSING', 'COMPLETED'] } } }),
+    prisma.organizationSubscription.count({ where: { createdAt: { gte: monthStart } } }),
+    prisma.planChangeRequest.count({ where: { organizationId: { not: null }, status: 'COMPLETED', createdAt: { lt: monthStart } } }),
+    prisma.planChangeRequest.count({ where: { organizationId: { not: null }, status: 'FAILED' } }),
+    prisma.organizationSubscription.count({ where: { billingCycle: 'ANNUAL', status: { in: ['ACTIVE', 'PAST_DUE'] } } }),
+    prisma.organizationSubscription.count({ where: { billingCycle: 'MONTHLY', status: { in: ['ACTIVE', 'PAST_DUE'] } } }),
+    prisma.planChangeRequest.aggregate({ where: { organizationId: { not: null }, status: 'COMPLETED', paidAt: { gte: monthStart } }, _sum: { amount: true } }),
+    prisma.planChangeRequest.aggregate({ where: { organizationId: { not: null }, status: 'COMPLETED', paidAt: { gte: new Date(now.getFullYear(), 0, 1) } }, _sum: { amount: true } }),
+    prisma.commercialFunnelEvent.count({ where: { eventType: 'PRICING_VIEWED' } }),
+    prisma.commercialFunnelEvent.count({ where: { eventType: 'CHECKOUT_STARTED' } }),
+    prisma.commercialFunnelEvent.groupBy({ by: ['eventType'], _count: { _all: true } }),
   ]);
+  const funnelCounts = Object.fromEntries(funnelEvents.map((row) => [row.eventType, row._count._all]));
 
   const active = subscriptions.filter((item) => ['ACTIVE', 'PAST_DUE'].includes(item.status));
-  const paying = active.filter((item) => item.plan !== 'FREE');
-  const trials = subscriptions.filter((item) => item.plan === 'FREE' && item.trialEndsAt && item.trialEndsAt > now);
-  const expiredTrials = subscriptions.filter((item) => item.plan === 'FREE' && item.trialEndsAt && item.trialEndsAt <= now);
+  const paying = active.filter((item) => item.plan !== 'FREE' && !item.trialEndsAt);
+  const trials = subscriptions.filter((item) => item.trialEndsAt && item.trialEndsAt > now);
+  const expiredTrials = subscriptions.filter((item) => item.trialEndsAt && item.trialEndsAt <= now);
   const mrr = paying.reduce((sum, item) => sum + (item.billingCycle === 'ANNUAL' ? subscriptionPlans[item.plan].annualPrice / 12 : subscriptionPlans[item.plan].monthlyPrice), 0);
   const grossRevenue = completedPayments.reduce((sum, item) => sum + Number(item.amount), 0);
   const grossRevenue30Days = recentCompleted.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -97,6 +181,31 @@ router.get('/summary', asyncHandler(async (_req: Request, res: Response) => {
       grossMarginPercent: grossRevenue ? Math.round((estimatedNetRevenue / grossRevenue) * 1000) / 10 : 0,
       trialConversionPercent: paying.length + expiredTrials.length ? Math.round((paying.length / (paying.length + expiredTrials.length)) * 1000) / 10 : 0,
       monthlyCancellationRate: active.length + cancelledRecently ? Math.round((cancelledRecently / (active.length + cancelledRecently)) * 1000) / 10 : 0,
+      payingChamas: paying.length,
+      freeChamas: subscriptions.filter((item) => item.plan === 'FREE').length,
+      trialGraceChamas: trials.length + subscriptions.filter((item) => item.status === 'PAST_DUE').length,
+      newSubscriptions,
+      renewals: renewalPayments,
+      failedPayments,
+      annualSubscriptions,
+      monthlySubscriptions,
+      averageRevenuePerChama: paying.length ? Math.round(mrr / paying.length) : 0,
+      revenueThisMonth: Number(monthRevenue._sum.amount ?? 0),
+      revenueThisYear: Number(yearRevenue._sum.amount ?? 0),
+      outstandingRenewals: subscriptions.filter((item) => item.status === 'PAST_DUE' || (item.currentPeriodEnd && item.currentPeriodEnd <= new Date(now.getTime() + 14 * 86400000))).length,
+      funnel: {
+        visitors: funnelCounts.LANDING_VISITED ?? null,
+        registeredUsers: funnelCounts.ACCOUNT_CREATED ?? registeredUsers,
+        createdChamas: funnelCounts.CHAMA_CREATED ?? createdOrganizations,
+        addedMembers: memberGroups.filter((group) => group._count._all > 1).length,
+        usedContributions: funnelCounts.FIRST_CONTRIBUTION ?? contributionGroups.length,
+        hitPremiumFeature: funnelCounts.PREMIUM_FEATURE_ATTEMPTED ?? premiumOrganizations,
+        viewedPricing: funnelCounts.PRICING_VIEWED ?? pricingViews,
+        startedCheckout: checkoutRequests,
+        paid: funnelCounts.PAID ?? paying.length,
+        pricingViews,
+        checkoutStarts: funnelCheckoutStarts,
+      },
     },
     capacityWarnings: capacityWarnings.slice(0, 10),
   });

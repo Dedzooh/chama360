@@ -18,6 +18,7 @@ import {
   auditLogQuerySchema
 } from '../schemas/notification';
 import { z } from 'zod';
+import { redactAuditValue } from '../utils/auditRedaction';
 
 export class AuditLogService {
   constructor(private prisma: PrismaClient) {}
@@ -36,11 +37,15 @@ export class AuditLogService {
         entityId: validatedData.entityId,
         userId: validatedData.userId,
         chamaId: validatedData.chamaId,
-        oldValues: validatedData.oldValues,
-        newValues: validatedData.newValues,
-        metadata: validatedData.metadata,
+        oldValues: redactAuditValue(validatedData.oldValues) as any,
+        newValues: redactAuditValue(validatedData.newValues) as any,
+        metadata: redactAuditValue(validatedData.metadata) as any,
         ipAddress: validatedData.ipAddress,
-        userAgent: validatedData.userAgent
+        userAgent: validatedData.userAgent,
+        requestId: validatedData.requestId,
+        reason: validatedData.reason,
+        transactionId: validatedData.transactionId,
+        approvalChain: redactAuditValue(validatedData.approvalChain) as any,
       }
     });
 

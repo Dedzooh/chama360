@@ -163,6 +163,7 @@ router.post('/register', asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Log user registration
+  await prisma.commercialFunnelEvent.create({ data: { eventType: 'ACCOUNT_CREATED', userId: user.id } });
   auditLog('CREATE', user.id, undefined, {
     action: 'USER_REGISTRATION',
     email: user.email,
@@ -208,6 +209,7 @@ router.post('/login', asyncHandler(async (req: Request, res: Response) => {
       email: true,
       passwordHash: true,
       isActive: true,
+      platformRole: true,
       mfaEnabled: true,
       mfaSecret: true,
       emailVerifiedAt: true,
@@ -273,6 +275,7 @@ router.post('/login', asyncHandler(async (req: Request, res: Response) => {
     user: {
       id: user.id,
       email: user.email,
+      platformRole: user.platformRole,
     },
   });
 }));
@@ -370,6 +373,7 @@ router.get('/me', authenticate, asyncHandler(async (req: Request, res: Response)
       phone: true,
       kycStatus: true,
       mfaEnabled: true,
+      platformRole: true,
       isActive: true,
       createdAt: true,
       updatedAt: true,

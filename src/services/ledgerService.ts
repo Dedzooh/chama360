@@ -1,6 +1,9 @@
 import { Prisma, TransactionStatus, TransactionType } from '@prisma/client';
+import { toDecimal } from '../utils/decimal';
 
 export type LedgerRecordStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'REVERSED';
+
+export type LedgerPrismaTx = Prisma.TransactionClient;
 
 export type LedgerRecord = {
   id?: string;
@@ -20,7 +23,7 @@ export type LedgerRecord = {
 
 export class LedgerService {
   static async recordContributionPayment(
-    tx: { transaction: { upsert: Function; findUnique?: Function } },
+    tx: LedgerPrismaTx,
     data: {
       organizationId?: string | null;
       chamaId: string;
@@ -28,7 +31,7 @@ export class LedgerService {
       amount: number | string;
       reference: string;
       idempotencyKey: string;
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown> | null;
       status?: LedgerRecordStatus | TransactionStatus;
     }
   ) {
@@ -39,7 +42,7 @@ export class LedgerService {
         chamaId: data.chamaId,
         organizationId: data.organizationId ?? null,
         type: TransactionType.CONTRIBUTION,
-        amount: Number(data.amount),
+        amount: toDecimal(data.amount),
         fromMemberId: data.fromMemberId ?? null,
         reference: data.reference,
         status: normalizedStatus,
@@ -53,7 +56,7 @@ export class LedgerService {
         chamaId: data.chamaId,
         organizationId: data.organizationId ?? null,
         type: TransactionType.CONTRIBUTION,
-        amount: Number(data.amount),
+        amount: toDecimal(data.amount),
         fromMemberId: data.fromMemberId ?? null,
         reference: data.reference,
         idempotencyKey: data.idempotencyKey,
@@ -67,7 +70,7 @@ export class LedgerService {
   }
 
   static async recordWelfarePayout(
-    tx: { transaction: { upsert: Function } },
+    tx: LedgerPrismaTx,
     data: {
       organizationId?: string | null;
       chamaId: string;
@@ -76,7 +79,7 @@ export class LedgerService {
       amount: number | string;
       reference: string;
       idempotencyKey: string;
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown> | null;
       status?: LedgerRecordStatus | TransactionStatus;
     }
   ) {
@@ -87,7 +90,7 @@ export class LedgerService {
         chamaId: data.chamaId,
         organizationId: data.organizationId ?? null,
         type: TransactionType.PAYOUT,
-        amount: Number(data.amount),
+        amount: toDecimal(data.amount),
         fromMemberId: data.fromMemberId ?? null,
         toMemberId: data.toMemberId ?? null,
         reference: data.reference,
@@ -102,7 +105,7 @@ export class LedgerService {
         chamaId: data.chamaId,
         organizationId: data.organizationId ?? null,
         type: TransactionType.PAYOUT,
-        amount: Number(data.amount),
+        amount: toDecimal(data.amount),
         fromMemberId: data.fromMemberId ?? null,
         toMemberId: data.toMemberId ?? null,
         reference: data.reference,
@@ -121,9 +124,9 @@ export class LedgerService {
     amount?: number | string | Prisma.Decimal | null;
     status?: string | null;
     createdAt?: Date | string | null;
-    metadata?: Record<string, any> | null;
+    metadata?: Record<string, unknown> | null;
   }) {
-    const metadata = (ledger.metadata ?? {}) as Record<string, any>;
+    const metadata = (ledger.metadata ?? {}) as Record<string, unknown>;
     const receiptNumber = metadata.mpesaReceiptNumber ?? metadata.receiptNumber ?? metadata.transactionRef ?? metadata.reference ?? null;
     const paymentMethod = metadata.paymentMethod ?? metadata.source ?? 'MANUAL';
 

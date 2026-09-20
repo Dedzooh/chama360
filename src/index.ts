@@ -34,6 +34,7 @@ import { accountDeletionService } from './services/accountDeletionService';
 import { mpesaService } from './services/mpesaService';
 import { RedisService } from './config/redis';
 import { randomUUID } from 'crypto';
+import { requestContext } from './middleware/requestContext';
 
 // Create Express application
 const app = express();
@@ -53,6 +54,7 @@ app.set('etag', false);
 
 // Must equal the number of trusted reverse proxies in front of this container.
 app.set('trust proxy', config.server.trustProxyHops);
+app.use(requestContext);
 
 // Security middleware
 app.use(helmet({

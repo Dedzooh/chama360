@@ -12,6 +12,7 @@
 
 import { prisma } from '../config/database';
 import { logger, auditLog } from '../config/logger';
+import { toDecimal } from '../utils/decimal';
 import { NotificationService } from './notificationService';
 import { 
   ConflictError,
@@ -265,7 +266,7 @@ export class MembershipService {
 
     const totalContributions = contributions
       .filter((c) => c.status === 'PAID')
-      .reduce((sum, c) => sum + Number(c.amount), 0);
+      .reduce((sum, c) => sum + toDecimal(c.amount).toNumber(), 0);
 
     const pendingContributions = contributions.filter(
       (c) => c.status === 'PENDING'
@@ -295,7 +296,7 @@ export class MembershipService {
     const activeLoans = loans.filter((l) => l.status === 'ACTIVE').length;
     const totalLoanBalance = loans
       .filter((l) => l.status === 'ACTIVE')
-      .reduce((sum, l) => sum + Number(l.balance), 0);
+      .reduce((sum, l) => sum + toDecimal(l.balance).toNumber(), 0);
 
     // Get upcoming meetings count (would need a meetings table in full implementation)
     const upcomingMeetings = 0; // Placeholder

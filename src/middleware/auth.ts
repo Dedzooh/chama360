@@ -7,6 +7,7 @@ import { AppError, UnauthorizedError, ForbiddenError } from './errorHandler';
 import { prisma } from '../config/database';
 import { RedisService } from '../config/redis';
 import { MemberRole } from '@prisma/client';
+import { config } from '../config/environment';
 
 // Extend Express Request interface to include user information
 declare global {
@@ -18,6 +19,7 @@ declare global {
         sessionId: string;
         kycStatus: string;
         isActive: boolean;
+        platformRole?: 'PLATFORM_OWNER' | 'PLATFORM_ADMIN' | 'FINANCE_ADMIN' | 'SUPPORT_ADMIN' | null;
       };
       currentChama?: {
         id: string;
@@ -62,6 +64,7 @@ export const authenticate = async (
         email: true,
         kycStatus: true,
         isActive: true,
+        platformRole: true,
       },
     });
 
@@ -73,6 +76,12 @@ export const authenticate = async (
       throw new UnauthorizedError('Account is inactive');
     }
 
+    let platformRole = user.platformRole;
+    if (!platformRole && config.systemAdminEmails.includes(user.email.trim().toLowerCase())) {
+      await prisma.user.updateMany({ where: { id: user.id, platformRole: null }, data: { platformRole: 'PLATFORM_OWNER' } });
+      platformRole = 'PLATFORM_OWNER';
+    }
+
     // Attach user to request
     req.user = {
       id: user.id,
@@ -80,6 +89,7 @@ export const authenticate = async (
       sessionId: payload.sessionId,
       kycStatus: user.kycStatus,
       isActive: user.isActive,
+      platformRole,
     };
 
     // Update session activity

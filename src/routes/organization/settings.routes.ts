@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { authenticate, rateLimitSensitive } from '../../middleware/auth';
+import { requireSubscriptionFeature } from '../../middleware/subscription';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
+import { subscriptionPlans } from '../../config/subscriptions';
 export function registerSettingsRoutes(router: Router, context: any): void {
   const { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, hasOrganizationPermission, updateOrganizationLifecycle, writeOrganizationAudit, auditLog } = context;
 router.get('/invites/:token', asyncHandler(async (req: Request, res: Response) => {
@@ -57,6 +59,12 @@ router.post(
     const slug = `${slugBase}-${Date.now().toString(36)}`;
 
     const organization = await db.$transaction(async (tx: any) => {
+      const referral = payload.referralCode
+        ? await tx.referral.findUnique({ where: { code: payload.referralCode.toUpperCase() } })
+        : null;
+      if (payload.referralCode && (!referral || referral.referrerId === req.user!.id || referral.referredOrganizationId)) {
+        throw new BadRequestError('Referral code is invalid or already used');
+      }
       const created = await tx.organization.create({
         data: {
           name: payload.name,
@@ -70,6 +78,7 @@ router.post(
           inviteToken: randomUUID(),
         },
       });
+      await tx.commercialFunnelEvent.create({ data: { eventType: 'CHAMA_CREATED', userId: req.user!.id, organizationId: created.id } });
 
       const ownerRole = await tx.organizationRole.create({
         data: {
@@ -128,6 +137,22 @@ router.post(
           securityRules: {},
         },
       });
+
+      await tx.organizationSmsCredit.create({
+        data: { organizationId: created.id, balance: 0, consumed: 0 },
+      });
+
+      const trialEndsAt = new Date(Date.now() + subscriptionPlans.GROWTH.trialDays * 86400000);
+      await tx.organizationSubscription.create({
+        data: { organizationId: created.id, plan: 'GROWTH', billingCycle: 'MONTHLY', status: 'ACTIVE', trialEndsAt, currentPeriodStart: new Date(), currentPeriodEnd: trialEndsAt, provider: 'CHAMA360_TRIAL' },
+      });
+
+      if (referral) {
+        await tx.referral.update({
+          where: { id: referral.id },
+          data: { referredOrganizationId: created.id, status: 'REGISTERED' },
+        });
+      }
 
       return tx.organization.findUnique({
         where: { id: created.id },
@@ -282,6 +307,7 @@ router.get(
 router.patch(
   '/:id',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -327,6 +353,7 @@ router.patch(
 router.post(
   '/:id/activate',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -346,6 +373,7 @@ router.post(
 router.post(
   '/:id/suspend',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -365,6 +393,7 @@ router.post(
 router.post(
   '/:id/close',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -384,6 +413,7 @@ router.post(
 router.post(
   '/:id/archive',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -402,6 +432,7 @@ router.post(
 router.delete(
   '/:id',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');

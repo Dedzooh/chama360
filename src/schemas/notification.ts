@@ -138,7 +138,11 @@ export const createAuditLogSchema = z.object({
   newValues: z.any().optional(),
   metadata: z.any().optional(),
   ipAddress: z.string().ip().optional(),
-  userAgent: z.string().max(500, 'User agent too long').optional()
+  userAgent: z.string().max(500, 'User agent too long').optional(),
+  requestId: z.string().max(128).optional(),
+  reason: z.string().max(1000).optional(),
+  transactionId: cuidSchema.optional(),
+  approvalChain: z.any().optional()
 });
 
 export const auditLogSchema = z.object({

@@ -1,12 +1,14 @@
+import { scheduleMpesaRetry } from './mpesaRetryService';
 import axios from 'axios';
 import { config } from '../config/environment';
 import { logger } from '../config/logger';
 import { prisma } from '../config/database';
 import { ContributionService } from './contributionService';
-import { PaymentMethod, TransactionStatus } from '@prisma/client';
+import { PaymentMethod, Prisma, TransactionStatus } from '@prisma/client';
 import type { MpesaC2BConfirmationInput } from '../schemas/mpesa';
 import { allocatePaidContribution } from './contributionAllocationService';
 import { LedgerService } from './ledgerService';
+import { classifyMpesaResultCode } from './mpesaFailureService';
 
 // Define AxiosInstance type locally if not available
 type AxiosInstance = ReturnType<typeof axios.create>;
@@ -67,17 +69,7 @@ interface MpesaCallback {
   };
 }
 
-export type MpesaFailureClassification = 'RETRYABLE' | 'USER_CANCELLED' | 'INSUFFICIENT_FUNDS' | 'TIMEOUT' | 'INVALID_REQUEST' | 'PERMANENT_FAILURE';
-
-export function classifyMpesaResultCode(resultCode: number, resultDescription = ''): MpesaFailureClassification {
-  const description = resultDescription.toLowerCase();
-  if (resultCode === 1032 || description.includes('cancel')) return 'USER_CANCELLED';
-  if (resultCode === 1 || description.includes('insufficient')) return 'INSUFFICIENT_FUNDS';
-  if (resultCode === 1037 || description.includes('timeout') || description.includes('timed out')) return 'TIMEOUT';
-  if (resultCode >= 400 && resultCode < 500 || description.includes('invalid')) return 'INVALID_REQUEST';
-  if ([1001, 1006, 1019, 1025, 9999].includes(resultCode)) return 'RETRYABLE';
-  return 'PERMANENT_FAILURE';
-}
+export { classifyMpesaResultCode, type MpesaFailureClassification } from './mpesaFailureService';
 
 interface PaymentRecord {
   id: string;
@@ -331,7 +323,7 @@ export class MpesaService {
    */
   private async createPaymentRecord(data: Omit<PaymentRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<void> {
     await LedgerService.recordContributionPayment(
-      { transaction: prisma.transaction },
+      prisma as unknown as Prisma.TransactionClient,
       {
         organizationId: data.organizationId ?? null,
         chamaId: data.chamaId,
@@ -406,6 +398,16 @@ export class MpesaService {
         const receivedPhone = this.normalizePhoneNumber(String(phoneNumber ?? ''));
         const expectedAmount = Math.round(Number(transaction.amount));
         const expectedContributionAmount = contribution ? Math.round(Number(contribution.amount)) : NaN;
+        const duplicateReceipt = mpesaReceiptNumber
+          ? await prisma.transaction.findFirst({
+              where: {
+                id: { not: transaction.id },
+                status: TransactionStatus.COMPLETED,
+                metadata: { path: ['mpesaReceiptNumber'], equals: mpesaReceiptNumber },
+              },
+              select: { id: true },
+            })
+          : null;
         const mismatchReasons = [
           metadata.checkoutRequestId !== CheckoutRequestID ? 'CheckoutRequestID does not match the initiated payment' : null,
           metadata.merchantRequestId !== callback.MerchantRequestID ? 'MerchantRequestID does not match the initiated payment' : null,
@@ -417,6 +419,7 @@ export class MpesaService {
           !Number.isFinite(callbackAmount) || callbackAmount !== expectedAmount || callbackAmount !== expectedContributionAmount ? `Callback amount does not match expected contribution amount KES ${expectedContributionAmount}` : null,
           !receivedPhone || receivedPhone !== expectedPhone || receivedPhone !== memberPhone ? 'Callback phone number does not match the paying member' : null,
           !mpesaReceiptNumber ? 'M-Pesa receipt number is missing' : null,
+          duplicateReceipt ? 'M-Pesa receipt number has already been used by another completed transaction' : null,
         ].filter((reason): reason is string => Boolean(reason));
 
         if (mismatchReasons.length > 0) {
@@ -754,33 +757,7 @@ export class MpesaService {
     phoneNumber: string;
     retryCount: number;
   }): Promise<void> {
-    const delayMinutes = Math.min(60, 5 * Math.pow(2, data.retryCount - 1));
-    const scheduledAt = new Date(Date.now() + delayMinutes * 60 * 1000);
-
-    // Create background job for retry
-    await prisma.backgroundJob.create({
-      data: {
-        type: 'NOTIFICATION_DELIVERY', // Reuse notification job type for retry
-        status: 'PENDING',
-        payload: {
-          type: 'MPESA_PAYMENT_RETRY',
-          contributionId: data.contributionId,
-          memberId: data.memberId,
-          chamaId: data.chamaId,
-          amount: data.amount,
-          phoneNumber: data.phoneNumber,
-          retryCount: data.retryCount,
-        },
-        scheduledAt,
-        maxRetries: 1, // Don't retry the retry job itself
-      },
-    });
-
-    logger.info('Payment retry scheduled', {
-      contributionId: data.contributionId,
-      retryCount: data.retryCount,
-      scheduledAt,
-    });
+    await scheduleMpesaRetry(data);
   }
 
   /**

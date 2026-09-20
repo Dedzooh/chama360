@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import { ContributionStatus, PaymentMethod, Prisma, TransactionStatus } from '@prisma/client';
 import { authenticate, rateLimitSensitive, requireMfaIfEnabled } from '../../middleware/auth';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { allocatePaidContribution, removeContributionAllocation } from '../../services/contributionAllocationService';
@@ -49,16 +50,16 @@ router.post(
     const dueDate = Number.isInteger(periodYear) && Number.isInteger(periodMonth) && periodMonth >= 1 && periodMonth <= 12
       ? new Date(Date.UTC(periodYear, periodMonth - 1, Math.min(dueDay, new Date(Date.UTC(periodYear, periodMonth, 0)).getUTCDate())))
       : new Date();
-    const contribution = await runFinancialTransaction(async (tx: any) => {
+    const contribution = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
       const created = await tx.contribution.create({ data: {
         chamaId: linkedChamaId, organizationId: id, memberId: payload.memberId, amount: payload.amount,
-        contributionType: payload.contributionType, period: payload.period, paymentMethod: payload.paymentMethod as any,
-        reference: payload.reference, recordedById: req.user!.id as string, status: payload.status as any,
+        contributionType: payload.contributionType, period: payload.period, paymentMethod: payload.paymentMethod as PaymentMethod,
+        reference: payload.reference, recordedById: req.user!.id as string, status: payload.status as ContributionStatus,
         paidAt, paidDate: paidAt, dueDate,
       } });
       if (payload.status === 'PAID') {
         const reference = payload.reference || `CONTRIBUTION-${created.id}`;
-        await tx.transaction.create({ data: { chamaId: linkedChamaId, organizationId: id, type: 'CONTRIBUTION', amount: payload.amount, fromMemberId: payload.memberId, reference, idempotencyKey: ledgerKey, status: 'COMPLETED', metadata: { contributionId: created.id, paymentMethod: payload.paymentMethod } } });
+        await tx.transaction.create({ data: { chamaId: linkedChamaId, organizationId: id, type: 'CONTRIBUTION', amount: payload.amount, fromMemberId: payload.memberId, reference, idempotencyKey: ledgerKey, status: TransactionStatus.COMPLETED, metadata: { contributionId: created.id, paymentMethod: payload.paymentMethod } } });
         await tx.contribution.update({ where: { id: created.id }, data: { transactionRef: reference, reference } });
         await tx.organizationWallet.update({ where: { organizationId: id }, data: { balance: { increment: payload.amount } } });
         await allocatePaidContribution(tx, { ...created, organizationId: id, status: 'PAID', period: payload.period });
@@ -66,6 +67,11 @@ router.post(
       await tx.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'CREATE', entityType: 'Contribution', entityId: created.id, newValues: created, metadata: { idempotencyKey: ledgerKey } } });
       return tx.contribution.findUnique({ where: { id: created.id } });
     });
+
+    if (payload.status === 'PAID') {
+      const priorPaid = await db.contribution.count({ where: { organizationId: id, status: 'PAID', id: { not: contribution?.id } } });
+      if (priorPaid === 0) await db.commercialFunnelEvent.create({ data: { eventType: 'FIRST_CONTRIBUTION', userId: req.user!.id, organizationId: id } });
+    }
 
     res.status(201).json({ contribution });
   })
@@ -124,16 +130,25 @@ router.post(
       throw new BadRequestError('Contribution has already been reversed');
     }
 
-    const reversed = await runFinancialTransaction(async (tx: any) => {
-      const updated = await tx.contribution.update({ where: { id: contributionId }, data: { status: 'REVERSED', reverseReason: payload.reason, reversedAt: new Date(), reversedById: req.user!.id } });
-      if (existing.status === 'PAID') {
-        await removeContributionAllocation(tx, existing);
-        const wallet = await tx.organizationWallet.findUnique({ where: { organizationId: id } });
-        if (!wallet || Number(wallet.balance) < Number(existing.amount)) throw new BadRequestError('Wallet balance is lower than this contribution; reconcile the ledger before reversing it');
-        await tx.organizationWallet.update({ where: { organizationId: id }, data: { balance: { decrement: existing.amount } } });
-        if (existing.transactionRef) await tx.transaction.updateMany({ where: { organizationId: id, reference: existing.transactionRef, type: 'CONTRIBUTION', status: 'COMPLETED' }, data: { status: 'REVERSED' } });
+    const reversed = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
+      const current = await tx.contribution.findUnique({ where: { id: contributionId } });
+      if (!current || current.organizationId !== id) throw new NotFoundError('Contribution not found');
+      if (current.status === 'REVERSED') throw new BadRequestError('Contribution has already been reversed');
+
+      const claimed = await tx.contribution.updateMany({
+        where: { id: contributionId, organizationId: id, status: { not: ContributionStatus.REVERSED } },
+        data: { status: ContributionStatus.REVERSED, reverseReason: payload.reason, reversedAt: new Date(), reversedById: req.user!.id },
+      });
+      if (claimed.count !== 1) throw new BadRequestError('Contribution was already reversed by another request');
+      const updated = await tx.contribution.findUniqueOrThrow({ where: { id: contributionId } });
+
+      if (current.status === 'PAID') {
+        await removeContributionAllocation(tx, current);
+        const walletDebit = await tx.organizationWallet.updateMany({ where: { organizationId: id, balance: { gte: current.amount } }, data: { balance: { decrement: current.amount } } });
+        if (walletDebit.count !== 1) throw new BadRequestError('Wallet balance is lower than this contribution; reconcile the ledger before reversing it');
+        if (current.transactionRef) await tx.transaction.updateMany({ where: { organizationId: id, reference: current.transactionRef, type: 'CONTRIBUTION', status: TransactionStatus.COMPLETED }, data: { status: TransactionStatus.REVERSED } });
       }
-      await tx.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'Contribution', entityId: contributionId, oldValues: existing, newValues: updated, metadata: { reverseReason: payload.reason } } });
+      await tx.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'Contribution', entityId: contributionId, oldValues: current, newValues: updated, metadata: { reverseReason: payload.reason } } });
       return updated;
     });
 
@@ -183,12 +198,12 @@ router.post('/:id/contributions/:contributionId/mark-paid', authenticate, asyncH
   const linkedChamaId = currentOrganization.chama?.id;
   if (!linkedChamaId) throw new BadRequestError('Organization is not linked to an active Chama');
   const paidAt = payload.paidAt ? new Date(payload.paidAt) : new Date();
-  const contribution = await runFinancialTransaction(async (tx: any) => {
+  const contribution = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
     const reference = payload.reference || `CONTRIBUTION-${contributionId}`;
-    const updated = await tx.contribution.update({ where: { id: contributionId }, data: { status: 'PAID', paymentMethod: payload.paymentMethod, reference, transactionRef: reference, paidAt, paidDate: paidAt, recordedById: req.user!.id } });
+    const updated = await tx.contribution.update({ where: { id: contributionId }, data: { status: ContributionStatus.PAID, paymentMethod: payload.paymentMethod as PaymentMethod, reference, transactionRef: reference, paidAt, paidDate: paidAt, recordedById: req.user!.id } });
     await allocatePaidContribution(tx, updated);
     await LedgerService.recordContributionPayment(
-      { transaction: tx },
+      tx,
       {
         organizationId: id,
         chamaId: linkedChamaId,

@@ -31,15 +31,34 @@ const deliver = async (type: NotificationChannelType, address: string, title: st
   if (type === 'SMS') return sendTransactionalSms(address, message);
 };
 
+const reserveSmsCredit = async (organizationId: string) => {
+  const reserved = await prisma.organizationSmsCredit.updateMany({
+    where: { organizationId, balance: { gt: 0 } },
+    data: { balance: { decrement: 1 }, consumed: { increment: 1 } },
+  });
+  if (reserved.count !== 1) throw new Error('No SMS credits remain for this organization');
+};
+
 export const notificationDeliveryService = {
   async processPending(limit = 100) {
     const channels = await prisma.notificationChannel.findMany({ where: { OR: [{ status: 'PENDING' }, { status: 'FAILED', retryCount: { lt: 3 } }] }, include: { notification: true }, orderBy: { createdAt: 'asc' }, take: limit });
     let delivered = 0; let failed = 0;
     for (const channel of channels) {
+      let smsOrganizationId: string | null = null;
+      let smsCreditReserved = false;
       try {
+        if (channel.type === 'SMS') {
+          smsOrganizationId = channel.notification.organizationId;
+          if (!smsOrganizationId) throw new Error('SMS notifications require an organization context');
+          await reserveSmsCredit(smsOrganizationId);
+          smsCreditReserved = true;
+        }
         await deliver(channel.type, channel.address, channel.notification.title, channel.notification.message);
         await prisma.notificationChannel.update({ where: { id: channel.id }, data: { status: 'DELIVERED', deliveredAt: new Date(), errorMessage: null } }); delivered += 1;
       } catch (error) {
+        if (smsCreditReserved && smsOrganizationId) {
+          await prisma.organizationSmsCredit.updateMany({ where: { organizationId: smsOrganizationId, consumed: { gt: 0 } }, data: { balance: { increment: 1 }, consumed: { decrement: 1 } } }).catch(() => undefined);
+        }
         await prisma.notificationChannel.update({ where: { id: channel.id }, data: { status: 'FAILED', errorMessage: (error as Error).message.slice(0, 500), retryCount: { increment: 1 } } }); failed += 1;
       }
       const grouped = await prisma.notificationChannel.groupBy({ by: ['status'], where: { notificationId: channel.notificationId }, _count: { _all: true } });

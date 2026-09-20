@@ -15,6 +15,7 @@ interface SubscriptionState {
   pendingAmount: number | null;
   paymentStatus: string | null;
   currentPeriodEnd: string | null;
+  trialEndsAt: string | null;
   cancelAtPeriodEnd: boolean;
   daysRemaining: number | null;
   inGracePeriod: boolean;
@@ -44,6 +45,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
   pendingAmount: null,
   paymentStatus: null,
   currentPeriodEnd: null,
+  trialEndsAt: null,
   cancelAtPeriodEnd: false,
   daysRemaining: null,
   inGracePeriod: false,
@@ -63,7 +65,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
     try {
       const data = await subscriptionService.getCurrent(get().organizationId);
       const latestPending = data.requests.find((request) => ['PENDING', 'PROCESSING'].includes(request.status));
-      set({ plan: data.subscription.plan, status: data.subscription.status === 'EXPIRED' ? 'CANCELLED' : data.subscription.status, currentPeriodEnd: data.subscription.currentPeriodEnd ?? null, cancelAtPeriodEnd: data.subscription.cancelAtPeriodEnd, daysRemaining: data.renewal.daysRemaining, inGracePeriod: data.renewal.inGracePeriod, pendingPlan: latestPending?.requestedPlan ?? null, pendingRequestId: latestPending?.id ?? null, pendingAmount: latestPending ? Number(latestPending.amount) : null, paymentStatus: latestPending?.status ?? null, message: '' });
+      set({ plan: data.subscription.plan, status: data.subscription.status === 'EXPIRED' ? 'CANCELLED' : data.subscription.status, currentPeriodEnd: data.subscription.currentPeriodEnd ?? null, trialEndsAt: data.subscription.trialEndsAt ?? null, cancelAtPeriodEnd: data.subscription.cancelAtPeriodEnd, daysRemaining: data.renewal.daysRemaining, inGracePeriod: data.renewal.inGracePeriod, pendingPlan: latestPending?.requestedPlan ?? null, pendingRequestId: latestPending?.id ?? null, pendingAmount: latestPending ? Number(latestPending.amount) : null, paymentStatus: latestPending?.status ?? null, message: '' });
     } catch {
       set({ message: 'Unable to refresh subscription status.' });
     } finally {
@@ -130,5 +132,5 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
   },
 }), {
   name: 'chama360-subscription',
-  partialize: (state) => ({ plan: state.plan, status: state.status, organizationId: state.organizationId, billingCycle: state.billingCycle, pendingPlan: state.pendingPlan, pendingRequestId: state.pendingRequestId, paymentStatus: state.paymentStatus, currentPeriodEnd: state.currentPeriodEnd, cancelAtPeriodEnd: state.cancelAtPeriodEnd, daysRemaining: state.daysRemaining, inGracePeriod: state.inGracePeriod }),
+  partialize: (state) => ({ plan: state.plan, status: state.status, organizationId: state.organizationId, billingCycle: state.billingCycle, pendingPlan: state.pendingPlan, pendingRequestId: state.pendingRequestId, paymentStatus: state.paymentStatus, currentPeriodEnd: state.currentPeriodEnd, trialEndsAt: state.trialEndsAt, cancelAtPeriodEnd: state.cancelAtPeriodEnd, daysRemaining: state.daysRemaining, inGracePeriod: state.inGracePeriod }),
 }));

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
+import { Prisma, WelfareClaimStatus, WelfareClaimType } from '@prisma/client';
 import { authenticate, rateLimitSensitive, requireMfaIfEnabled } from '../../middleware/auth';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
+import { requireSubscriptionFeature } from '../../middleware/subscription';
 import { LedgerService } from '../../services/ledgerService';
 import { computeApprovalOutcome, validateWelfarePayout } from '../../services/welfareGuardrails';
 export function registerWelfareRoutes(router: Router, context: any): void {
@@ -29,8 +31,8 @@ router.post(
         organizationId: id,
         requestedById: (req.user.id as string),
         memberId: payload.memberId,
-        type: payload.claimType as any,
-        claimType: payload.claimType,
+        type: payload.claimType as WelfareClaimType,
+        claimType: payload.claimType as WelfareClaimType,
         amountRequested: payload.amountRequested,
         reason: payload.reason,
         description: payload.reason,
@@ -66,7 +68,7 @@ router.get(
 
     const claims = await db.welfareClaim.findMany({
       where: { organizationId: id },
-      include: { requestedBy: true, reviewedBy: true },
+      include: { requestedBy: true, reviewedBy: true, approvals: { include: { approver: true }, orderBy: { createdAt: 'asc' } } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -77,6 +79,7 @@ router.get(
 router.patch(
   '/:id/welfare/claims/:claimId/approve',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   requireMfaIfEnabled,
   rateLimitSensitive,
   asyncHandler(async (req: Request, res: Response) => {
@@ -91,34 +94,53 @@ router.patch(
     }
 
     const { comment } = welfareTransitionSchema.parse(req.body);
-    const existing = await db.welfareClaim.findUnique({ where: { id: claimId } });
+    const existing = await db.welfareClaim.findUnique({ where: { id: claimId }, include: { approvals: true } });
     if (!existing || existing.organizationId !== id) {
       throw new NotFoundError('Welfare claim not found');
     }
     if (existing.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be approved');
+    if (existing.requestedById === req.user.id) throw new ForbiddenError('A member cannot approve their own welfare claim');
 
     const organization = await requireOrganizationStatus(id);
     const approvalPolicy = resolveWelfareApprovalPolicy(organization.metadata, existing.type, Number(existing.amountRequested ?? 0));
-    const approvalsForClaim = [existing.reviewedById].filter(Boolean) as string[];
-    const approvalOutcome = computeApprovalOutcome({
-      approvals: approvalsForClaim.concat(req.user.id as string),
-      requiredApprovals: approvalPolicy.requiredApprovals,
-      thresholdPercent: approvalPolicy.thresholdPercent,
-      totalPossibleApprovers: approvalPolicy.totalPossibleApprovers,
-    });
+    const { claim, approvalOutcome } = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
+      const current = await tx.welfareClaim.findUnique({ where: { id: claimId }, include: { approvals: true } });
+      if (!current || current.organizationId !== id) throw new NotFoundError('Welfare claim not found');
+      if (current.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be approved');
+      if (current.requestedById === req.user!.id) throw new ForbiddenError('A member cannot approve their own welfare claim');
+      if (current.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
 
-    if (approvalPolicy.approvalMode !== 'AUTO' && !approvalPolicy.autoApproveWithinLimits && !approvalOutcome.approved) {
-      throw new BadRequestError(`This welfare claim requires ${approvalPolicy.requiredApprovals} qualified approvals before it can be marked approved.`);
-    }
+      await tx.welfareClaimApproval.create({
+        data: {
+          claimId,
+          approverId: req.user!.id,
+          decision: 'APPROVED',
+          comment,
+        },
+      });
 
-    const claim = await db.welfareClaim.update({
-      where: { id: claimId },
-      data: {
-        status: 'APPROVED' as any,
-        amountApproved: existing.amountRequested,
-        reviewedById: (req.user.id as string),
-        reviewedAt: new Date(),
-      },
+      const approvals = await tx.welfareClaimApproval.findMany({ where: { claimId, decision: 'APPROVED' }, select: { approverId: true } });
+      const outcome = computeApprovalOutcome({
+        approvals: approvals.map((approval) => approval.approverId),
+        requiredApprovals: approvalPolicy.requiredApprovals,
+        thresholdPercent: approvalPolicy.thresholdPercent,
+        totalPossibleApprovers: approvalPolicy.totalPossibleApprovers,
+      });
+      const shouldApprove = approvalPolicy.autoApproveWithinLimits || outcome.approved;
+      const updated = await tx.welfareClaim.update({
+        where: { id: claimId },
+        data: shouldApprove ? {
+          status: WelfareClaimStatus.APPROVED,
+          amountApproved: current.amountRequested,
+          reviewedById: req.user!.id,
+          reviewedAt: new Date(),
+        } : {
+          reviewedById: req.user!.id,
+          reviewedAt: new Date(),
+        },
+        include: { approvals: true },
+      });
+      return { claim: updated, approvalOutcome: outcome };
     });
 
     await writeOrganizationAudit({
@@ -134,6 +156,8 @@ router.patch(
         reviewedAction: 'APPROVED',
         approvalMode: approvalPolicy.approvalMode,
         requiredApprovals: approvalPolicy.requiredApprovals,
+        approvalsReceived: approvalOutcome.approvalsReceived,
+        approvalChain: claim.approvals,
         comment,
       },
     });
@@ -145,6 +169,7 @@ router.patch(
 router.patch(
   '/:id/welfare/claims/:claimId/pay',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   requireMfaIfEnabled,
   rateLimitSensitive,
   asyncHandler(async (req: Request, res: Response) => {
@@ -182,22 +207,12 @@ router.patch(
       return;
     }
 
-    const payoutValidation = validateWelfarePayout({
-      organization: currentOrganization,
-      walletBalance: 0,
-      amountRequested: Number(existing.amountRequested ?? 0),
-      amountApproved: Number(existing.amountApproved ?? existing.amountRequested ?? 0),
-    });
-
-    if (!payoutValidation.valid) {
-      throw new BadRequestError(payoutValidation.errors[0] || 'Invalid welfare payout amount');
-    }
-
-    if (payoutValidation.payoutAmount <= 0) {
+    const approvedAmount = Number(existing.amountApproved ?? existing.amountRequested ?? 0);
+    if (approvedAmount <= 0) {
       throw new BadRequestError('Approved welfare amount must be greater than zero');
     }
 
-    const claim = await runFinancialTransaction(async (tx: any) => {
+    const claim = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
       const wallet = await tx.organizationWallet.findUnique({ where: { organizationId: id } });
       if (!wallet) {
         throw new BadRequestError('This organization does not have a welfare wallet configured');
@@ -215,14 +230,10 @@ router.patch(
 
       const effectivePayoutAmount = payoutCheck.payoutAmount;
 
-      if (Number(wallet.balance) < effectivePayoutAmount) {
-        throw new BadRequestError(`Insufficient welfare fund balance. Available: KES ${Number(wallet.balance).toLocaleString()}, required: KES ${effectivePayoutAmount.toLocaleString()}`);
-      }
-
       const updated = await tx.welfareClaim.update({
         where: { id: claimId },
         data: {
-          status: 'PAID' as any,
+          status: WelfareClaimStatus.PAID,
           paidAt: new Date(),
           reviewedById: existing.reviewedById ?? actingUserId,
           amountApproved: existing.amountApproved ?? existing.amountRequested,
@@ -231,7 +242,7 @@ router.patch(
 
       const reference = `WELFARE-${claimId}-${Date.now()}`;
       await LedgerService.recordWelfarePayout(
-        { transaction: tx },
+        tx,
         {
           organizationId: id,
           chamaId: linkedChamaId,
@@ -251,22 +262,16 @@ router.patch(
         }
       );
 
-      await tx.organizationWallet.update({
-        where: { organizationId: id },
+      const walletDebit = await tx.organizationWallet.updateMany({
+        where: { organizationId: id, balance: { gte: effectivePayoutAmount } },
         data: { balance: { decrement: effectivePayoutAmount } },
       });
+      if (walletDebit.count !== 1) {
+        throw new BadRequestError('Insufficient welfare fund balance; another financial operation may have used the available funds');
+      }
 
       return updated;
     });
-
-    const approvalOutcome = computeApprovalOutcome({
-      approvals: [existing.reviewedById].filter(Boolean),
-      requiredApprovals: 1,
-      thresholdPercent: 100,
-    });
-    if (!approvalOutcome.approved && existing.status === 'APPROVED') {
-      throw new BadRequestError('Welfare claim approval has not reached the required threshold');
-    }
 
     await writeOrganizationAudit({
       organizationId: id,
@@ -286,6 +291,7 @@ router.patch(
 router.patch(
   '/:id/welfare/claims/:claimId/reject',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -307,7 +313,7 @@ router.patch(
     const claim = await db.welfareClaim.update({
       where: { id: claimId },
       data: {
-        status: 'REJECTED' as any,
+        status: WelfareClaimStatus.REJECTED,
         reviewedById: (req.user.id as string),
         reviewedAt: new Date(),
       },

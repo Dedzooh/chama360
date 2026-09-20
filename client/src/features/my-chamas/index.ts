@@ -1,0 +1,1 @@
+export { MyChamas } from './MyChamasPage';

@@ -8,58 +8,61 @@ import { SessionRestore } from './components/auth/SessionRestore';
 import { ROUTES } from './config/routes';
 import { AppUpdateGate } from './components/AppUpdateGate';
 import { PremiumRoute } from './components/subscription/PremiumRoute';
+import { PlatformAccess } from './components/auth/PlatformAccess';
 
 const page = <T extends Record<string, unknown>, K extends keyof T>(loader: () => Promise<T>, name: K) =>
   lazy(async () => ({ default: (await loader())[name] as React.ComponentType }));
 
-const Splash = page(() => import('./pages/Splash'), 'Splash');
-const Login = page(() => import('./pages/Login'), 'Login');
-const Register = page(() => import('./pages/Register'), 'Register');
-const ForgotPassword = page(() => import('./pages/ForgotPassword'), 'ForgotPassword');
-const OtpVerification = page(() => import('./pages/OtpVerification'), 'OtpVerification');
-const MyChamas = page(() => import('./pages/MyChamas'), 'MyChamas');
-const DesignSystem = page(() => import('./pages/DesignSystem'), 'DesignSystem');
-const JoinChama = page(() => import('./pages/JoinChama'), 'JoinChama');
-const JoinInvite = page(() => import('./pages/JoinInvite'), 'JoinInvite');
-const JoinOrganizationInvite = page(() => import('./pages/JoinOrganizationInvite'), 'JoinOrganizationInvite');
-const Notifications = page(() => import('./pages/Notifications'), 'Notifications');
-const Profile = page(() => import('./pages/Profile'), 'Profile');
-const Dashboard = page(() => import('./pages/Dashboard'), 'Dashboard');
-const Members = page(() => import('./pages/Members'), 'Members');
-const Contributions = page(() => import('./pages/Contributions'), 'Contributions');
-const Loans = page(() => import('./pages/Loans'), 'Loans');
-const Welfare = page(() => import('./pages/Welfare'), 'Welfare');
-const Investments = page(() => import('./pages/Investments'), 'Investments');
-const Meetings = page(() => import('./pages/Meetings'), 'Meetings');
-const Reports = page(() => import('./pages/Reports'), 'Reports');
-const Settings = page(() => import('./pages/Settings'), 'Settings');
-const Documents = page(() => import('./pages/Documents'), 'Documents');
-const Voting = page(() => import('./pages/Voting'), 'Voting');
-const AuditLogs = page(() => import('./pages/AuditLogs'), 'AuditLogs');
-const Help = page(() => import('./pages/Help'), 'Help');
-const MobileTools = page(() => import('./pages/MobileTools'), 'MobileTools');
-const MpesaAdmin = page(() => import('./pages/MpesaAdmin'), 'MpesaAdmin');
-const AdminDashboard = page(() => import('./pages/AdminDashboard'), 'AdminDashboard');
-const AdminRoles = page(() => import('./pages/AdminRoles'), 'AdminRoles');
-const AdminApprovals = page(() => import('./pages/AdminApprovals'), 'AdminApprovals');
-const AdminWallet = page(() => import('./pages/AdminWallet'), 'AdminWallet');
-const AdminChamaSettings = page(() => import('./pages/AdminChamaSettings'), 'AdminChamaSettings');
-const AdminAuditLogs = page(() => import('./pages/AdminAuditLogs'), 'AdminAuditLogs');
-const CreateChama = page(() => import('./pages/CreateChama'), 'CreateChama');
-const CreateChamaRoot = page(() => import('./pages/CreateChama'), 'CreateChamaRoot');
-const ChooseTypeStep = page(() => import('./pages/ChooseTypeStep'), 'ChooseTypeStep');
-const ChamaDetailsStep = page(() => import('./pages/ChamaDetailsStep'), 'ChamaDetailsStep');
-const EnableModulesStep = page(() => import('./pages/EnableModulesStep'), 'EnableModulesStep');
-const ContributionRulesStep = page(() => import('./pages/ContributionRulesStep'), 'ContributionRulesStep');
-const LoanRulesStep = page(() => import('./pages/LoanRulesStep'), 'LoanRulesStep');
-const WelfareRulesStep = page(() => import('./pages/WelfareRulesStep'), 'WelfareRulesStep');
-const CommitteeStep = page(() => import('./pages/CommitteeStep'), 'CommitteeStep');
-const InviteMembersStep = page(() => import('./pages/InviteMembersStep'), 'InviteMembersStep');
-const ReviewSetupStep = page(() => import('./pages/ReviewSetupStep'), 'ReviewSetupStep');
-const Upgrade = page(() => import('./pages/Upgrade'), 'Upgrade');
-const PlatformSubscriptions = page(() => import('./pages/PlatformSubscriptions'), 'PlatformSubscriptions');
-const Legal = page(() => import('./pages/Legal'), 'Legal');
-const DownloadApp = page(() => import('./pages/DownloadApp'), 'DownloadApp');
+const Splash = page(() => import('./features/auth'), 'Splash');
+const Login = page(() => import('./features/auth'), 'Login');
+const Register = page(() => import('./features/auth'), 'Register');
+const ForgotPassword = page(() => import('./features/auth'), 'ForgotPassword');
+const OtpVerification = page(() => import('./features/auth'), 'OtpVerification');
+const MyChamas = page(() => import('./features/my-chamas'), 'MyChamas');
+const DesignSystem = page(() => import('./features/utility'), 'DesignSystem');
+const JoinChama = page(() => import('./features/utility'), 'JoinChama');
+const JoinInvite = page(() => import('./features/public'), 'JoinInvite');
+const JoinOrganizationInvite = page(() => import('./features/public'), 'JoinOrganizationInvite');
+const Notifications = page(() => import('./features/notifications'), 'Notifications');
+const Profile = page(() => import('./features/profile'), 'Profile');
+const Dashboard = page(() => import('./features/dashboard'), 'Dashboard');
+const Members = page(() => import('./features/members'), 'Members');
+const Contributions = page(() => import('./features/contributions'), 'Contributions');
+const Loans = page(() => import('./features/loans'), 'Loans');
+const Welfare = page(() => import('./features/welfare'), 'Welfare');
+const Approvals = page(() => import('./features/approvals'), 'ApprovalsPage');
+const FinancialExceptions = page(() => import('./features/finance'), 'FinancialExceptionsPage');
+const Investments = page(() => import('./features/investments'), 'Investments');
+const Meetings = page(() => import('./features/meetings'), 'Meetings');
+const Reports = page(() => import('./features/reports'), 'Reports');
+const Settings = page(() => import('./features/settings'), 'Settings');
+const Documents = page(() => import('./features/utility'), 'Documents');
+const Voting = page(() => import('./features/voting'), 'Voting');
+const AuditLogs = page(() => import('./features/utility'), 'AuditLogs');
+const Help = page(() => import('./features/utility'), 'Help');
+const MobileTools = page(() => import('./features/utility'), 'MobileTools');
+const MpesaAdmin = page(() => import('./features/mpesa'), 'MpesaAdmin');
+const AdminDashboard = page(() => import('./features/admin'), 'AdminDashboard');
+const AdminRoles = page(() => import('./features/admin'), 'AdminRoles');
+const AdminApprovals = page(() => import('./features/admin'), 'AdminApprovals');
+const AdminWallet = page(() => import('./features/admin'), 'AdminWallet');
+const AdminChamaSettings = page(() => import('./features/admin'), 'AdminChamaSettings');
+const AdminAuditLogs = page(() => import('./features/admin'), 'AdminAuditLogs');
+const CreateChama = page(() => import('./features/onboarding'), 'CreateChama');
+const CreateChamaRoot = CreateChama;
+const ChooseTypeStep = page(() => import('./features/onboarding'), 'ChooseTypeStep');
+const ChamaDetailsStep = page(() => import('./features/onboarding'), 'ChamaDetailsStep');
+const EnableModulesStep = page(() => import('./features/onboarding'), 'EnableModulesStep');
+const ContributionRulesStep = page(() => import('./features/onboarding'), 'ContributionRulesStep');
+const LoanRulesStep = page(() => import('./features/onboarding'), 'LoanRulesStep');
+const WelfareRulesStep = page(() => import('./features/onboarding'), 'WelfareRulesStep');
+const CommitteeStep = page(() => import('./features/onboarding'), 'CommitteeStep');
+const InviteMembersStep = page(() => import('./features/onboarding'), 'InviteMembersStep');
+const ReviewSetupStep = page(() => import('./features/onboarding'), 'ReviewSetupStep');
+const Upgrade = page(() => import('./features/utility'), 'Upgrade');
+const PlatformSubscriptions = page(() => import('./features/utility'), 'PlatformSubscriptions');
+const Legal = page(() => import('./features/public'), 'Legal');
+const DownloadApp = page(() => import('./features/public'), 'DownloadApp');
 
 const RouteLoading = () => (
   <div className="flex min-h-[45vh] items-center justify-center p-8" role="status" aria-live="polite">
@@ -100,7 +103,10 @@ function App() {
               <Route path={ROUTES.app.notifications} element={<Notifications />} />
               <Route path={ROUTES.app.profile} element={<Profile />} />
               <Route path={ROUTES.app.upgrade} element={<Upgrade />} />
-              <Route path={ROUTES.platform.subscriptions} element={<PlatformSubscriptions />} />
+              <Route element={<PlatformAccess />}>
+                <Route path={ROUTES.platform.home} element={<PlatformSubscriptions />} />
+                <Route path={ROUTES.platform.subscriptions} element={<PlatformSubscriptions />} />
+              </Route>
 
               <Route path={ROUTES.app.createChama} element={<CreateChama />}>
                 <Route index element={<CreateChamaRoot />} />
@@ -123,6 +129,10 @@ function App() {
                 <Route path="loans" element={<WorkspaceAccess module="loans" label="Loans"><Loans /></WorkspaceAccess>} />
                 <Route path="loans/:loanId" element={<WorkspaceAccess module="loans" label="Loans"><Loans /></WorkspaceAccess>} />
                 <Route path="welfare" element={<WorkspaceAccess module="welfare" label="Welfare"><Welfare /></WorkspaceAccess>} />
+                <Route path="approvals" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Approvals"><Approvals /></WorkspaceAccess>} />
+                <Route path="approvals/:kind" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Approvals"><Approvals /></WorkspaceAccess>} />
+                <Route path="approvals/:kind/:itemId" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Approvals"><Approvals /></WorkspaceAccess>} />
+                 <Route path="financial-exceptions" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Financial Exceptions"><FinancialExceptions /></WorkspaceAccess>} />
                 <Route path="investments" element={<WorkspaceAccess module="investments" label="Investments"><PremiumRoute feature="INVESTMENT_AUTOMATION"><Investments /></PremiumRoute></WorkspaceAccess>} />
                 <Route path="meetings" element={<WorkspaceAccess module="meetings" label="Meetings"><Meetings /></WorkspaceAccess>} />
                 <Route path="meetings/:meetingId" element={<WorkspaceAccess module="meetings" label="Meetings"><Meetings /></WorkspaceAccess>} />

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../../middleware/auth';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
+import { requireSubscriptionFeature } from '../../middleware/subscription';
 export function registerMembersRoutes(router: Router, context: any): void {
   const { db, memberCreateSchema, memberUpdateSchema, getOrganizationAccess, hasOrganizationPermission, isOwnerLike, isFounderRole, requireOrganizationStatus, requireMemberCapacity, writeOrganizationAudit } = context;
 router.post(
@@ -53,6 +54,8 @@ router.post(
         status: payload.status,
       },
     });
+    const memberRecordCount = await db.organizationMember.count({ where: { organizationId: id } });
+    if (memberRecordCount === 2) await db.commercialFunnelEvent.create({ data: { eventType: 'FIRST_MEMBER_INVITED', userId: req.user!.id, organizationId: id } });
 
     await writeOrganizationAudit({
       organizationId: id,
@@ -113,6 +116,7 @@ router.get(
 router.patch(
   '/:id/members/:memberId',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
@@ -175,6 +179,7 @@ router.patch(
 router.delete(
   '/:id/members/:memberId',
   authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
   asyncHandler(async (req: Request, res: Response) => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');

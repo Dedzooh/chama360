@@ -454,6 +454,45 @@ export const organizationService = {
     }));
   },
 
+  listFinancialExceptions: async (organizationId: string) => {
+    const response = await api.get(`/organizations/${organizationId}/financial-exceptions`);
+    return response.data.exceptions as Array<{
+      id: string;
+      source: 'TRANSACTION' | 'MPESA_CALLBACK';
+      type: string;
+      status: string;
+      amount: number | null;
+      reference: string;
+      member?: { id: string; firstName: string; lastName: string; email: string } | null;
+      reason: string;
+      createdAt: string;
+      metadata?: Record<string, unknown>;
+    }>;
+  },
+
+  downloadVault: async (organizationId: string) => {
+    const response = await api.get(`/organizations/${organizationId}/vault`, { responseType: 'blob' });
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${organizationId}-chama-vault.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
+
+  assertReportExportAccess: async (organizationId: string) => {
+    await api.get(`/organizations/${organizationId}/report-export-access`);
+  },
+
+  uploadOrganizationDocument: async (organizationId: string, payload: { name: string; contentType: string; data: string }) => {
+    const response = await api.post(`/organizations/${organizationId}/documents`, payload);
+    return response.data.document;
+  },
+  getOrganizationDocumentUsage: async (organizationId: string) => {
+    const response = await api.get(`/organizations/${organizationId}/documents/usage`);
+    return response.data as { usedBytes: number; documentCount: number };
+  },
+
   approveWelfareClaim: async (organizationId: string, claimId: string) => {
     const response = await api.patch(`/organizations/${organizationId}/welfare/claims/${claimId}/approve`);
     return response.data.claim as WelfareClaimRecord;

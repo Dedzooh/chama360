@@ -72,7 +72,7 @@ export const subscriptionLifecycleService = {
     };
 
     for (const subscription of subscriptions) {
-      if (subscription.plan === 'FREE' && subscription.trialEndsAt) {
+      if (subscription.trialEndsAt) {
         const days = Math.ceil((subscription.trialEndsAt.getTime() - now.getTime()) / 86400000);
         const marker = days <= 0 ? `TRIAL_EXPIRED_${subscription.trialEndsAt.toISOString()}` : [7, 3, 1].includes(days) ? `TRIAL_${days}D_${subscription.trialEndsAt.toISOString()}` : null;
         if (marker) await notifyAdministrators(subscription, marker, days <= 0 ? `${subscription.organization.name} trial has ended` : `${subscription.organization.name} trial ends in ${days} day${days === 1 ? '' : 's'}`, days <= 0 ? 'Choose a CHAMA360 plan now to restore full chama access and retain your records.' : 'Open Plans to choose Starter, Growth, Pro, or Enterprise before premium access ends.', days <= 1 ? 'CRITICAL' : 'IMPORTANT');
