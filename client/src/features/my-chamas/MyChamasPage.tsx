@@ -164,7 +164,7 @@ export const MyChamas = () => {
   const primaryOrganizationId = organizations[0]?.id;
   const managedOrganizationId = organizations.find((organization) => ['FOUNDER', 'OWNER', 'ADMIN'].includes((organization.myRole ?? '').toUpperCase()))?.id;
   const quickActions = [
-    { label: 'Record Contribution', to: primaryOrganizationId ? ROUTES.chama.contributions(primaryOrganizationId) : ROUTES.app.createChama, icon: Plus, tone: 'green' },
+    { label: 'Record Contribution', to: primaryOrganizationId ? ROUTES.chama.contributions(primaryOrganizationId) : ROUTES.createChama.type, icon: Plus, tone: 'green' },
     { label: 'Apply Loan', to: primaryOrganizationId ? ROUTES.chama.loans(primaryOrganizationId) : ROUTES.app.joinChama, icon: Wallet, tone: 'blue' },
     { label: 'Approve Loans', to: primaryOrganizationId ? ROUTES.chama.loans(primaryOrganizationId) : ROUTES.app.myChamas, icon: CheckCircle, tone: 'purple' },
     { label: 'Welfare Claim', to: primaryOrganizationId ? ROUTES.chama.welfare(primaryOrganizationId) : ROUTES.app.myChamas, icon: Heart, tone: 'pink' },
@@ -299,7 +299,7 @@ export const MyChamas = () => {
             description="Create your first Chama to start saving, lending, and managing welfare."
             action={
               <div className="grid w-full gap-3 sm:grid-cols-2">
-                <Link to={ROUTES.app.createChama}>
+                <Link to={ROUTES.createChama.type}>
                   <Button className="w-full" startIcon={<Plus className="h-4 w-4" />}>
                     Create Chama
                   </Button>
@@ -372,7 +372,7 @@ export const MyChamas = () => {
             <h1>My Chamas</h1>
             <p>Choose a Chama, review balances, and jump into the work that needs attention.</p>
             <div className="chama360-wide-hero-actions">
-              <Link to={ROUTES.app.createChama} className="chama360-wide-button primary">
+              <Link to={ROUTES.createChama.type} className="chama360-wide-button primary">
                 <Plus className="h-5 w-5" />
                 <span>Create Chama</span>
               </Link>
@@ -447,7 +447,7 @@ export const MyChamas = () => {
             description="Create your first Chama to start saving, lending, and managing welfare."
             action={
               <div className="flex flex-wrap justify-center gap-3">
-                <Link to={ROUTES.app.createChama}>
+                <Link to={ROUTES.createChama.type}>
                   <Button startIcon={<Plus className="h-4 w-4" />}>Create Chama</Button>
                 </Link>
                 <Link to={ROUTES.app.joinChama}>

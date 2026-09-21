@@ -224,7 +224,7 @@ export const Dashboard = () => {
         description="You do not belong to any Chama yet. Create one or join through an invitation."
         action={
           <div className="flex flex-wrap justify-center gap-3">
-            <Link to={ROUTES.app.createChama}>
+            <Link to={ROUTES.createChama.type}>
               <Button startIcon={<Plus className="h-4 w-4" />}>Create Chama</Button>
             </Link>
             <Link to={ROUTES.app.joinChama}>
@@ -348,7 +348,7 @@ export const Dashboard = () => {
           description="Create a Chama or join one to start managing money, members, and welfare."
           action={
             <div className="grid w-full gap-3 sm:grid-cols-2">
-              <Link to={ROUTES.app.createChama}>
+              <Link to={ROUTES.createChama.type}>
                 <Button className="w-full" startIcon={<Plus className="h-4 w-4" />}>
                   Create Chama
                 </Button>
@@ -606,7 +606,7 @@ export const Dashboard = () => {
                 <small>Create a Chama, join one, and keep your financial work in one place.</small>
               </div>
               <div className="chama360-dashboard-desktop-actions">
-                <Link to={ROUTES.app.createChama}>
+                <Link to={ROUTES.createChama.type}>
                   <Plus className="h-4 w-4" />
                   Create Chama
                 </Link>
