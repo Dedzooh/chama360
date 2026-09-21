@@ -76,6 +76,11 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/certs/origin.pem:/etc/nginx/certs/origin.pem:ro
+      - ./docker/nginx/certs/origin.key:/etc/nginx/certs/origin.key:ro
     networks:
       - backend
       - public

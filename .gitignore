@@ -241,3 +241,16 @@ logs/
 *.pem
 *.key
 keystore.properties
+
+# Production TLS certificates
+docker/nginx/certs/
+
+# Server deployment backups
+*.bak-https
+*.before-clean
+*.save
+*.save.*
+
+# Accidental server artifacts
+/chama-management-system@1.0.0
+/node
