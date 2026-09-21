@@ -7,5 +7,5 @@ export { InviteMembersStep } from './InviteMembersStep.tsx';
 export { LoanRulesStep } from './LoanRulesStep.tsx';
 export { ReviewSetupStep } from './ReviewSetupStep.tsx';
 export { WelfareRulesStep } from './WelfareRulesStep.tsx';
-export { CreateChama } from './CreateChama.tsx';
+export { CreateChama, CreateChamaRoot } from './CreateChama.tsx';
 

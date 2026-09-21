@@ -49,7 +49,7 @@ const AdminWallet = page(() => import('./features/admin'), 'AdminWallet');
 const AdminChamaSettings = page(() => import('./features/admin'), 'AdminChamaSettings');
 const AdminAuditLogs = page(() => import('./features/admin'), 'AdminAuditLogs');
 const CreateChama = page(() => import('./features/onboarding'), 'CreateChama');
-const CreateChamaRoot = CreateChama;
+const CreateChamaRoot = page(() => import('./features/onboarding'), 'CreateChamaRoot');
 const ChooseTypeStep = page(() => import('./features/onboarding'), 'ChooseTypeStep');
 const ChamaDetailsStep = page(() => import('./features/onboarding'), 'ChamaDetailsStep');
 const EnableModulesStep = page(() => import('./features/onboarding'), 'EnableModulesStep');
