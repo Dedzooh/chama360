@@ -138,7 +138,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
     ...(activeOrganizationId && currentOrganization?.enabledModules?.loans ? [{ label: 'Request Loan', to: ROUTES.chama.loans(activeOrganizationId), icon: Wallet, tone: 'blue' as const }] : []),
     ...(activeOrganizationId && currentOrganization?.enabledModules?.welfare ? [{ label: 'Welfare Claim', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' as const }] : []),
     ...(activeOrganizationId ? [{ label: 'Invite', to: ROUTES.chama.members(activeOrganizationId), icon: UserPlus, tone: 'gold' as const }] : []),
-    { label: 'Create Chama', to: ROUTES.app.createChama, icon: Plus, tone: 'green' },
+    { label: 'Create Chama', to: ROUTES.createChama.type, icon: Plus, tone: 'green' },
     { label: 'Join Chama', to: ROUTES.app.joinChama, icon: UserPlus, tone: 'blue' },
     { label: 'Notifications', to: ROUTES.app.notifications, icon: Bell, tone: 'gold' },
     { label: 'Scan QR', to: ROUTES.app.mobile, icon: QrCode, tone: 'gold' },
@@ -177,7 +177,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
         { label: 'Reports', to: ROUTES.chama.reports(activeOrganizationId), icon: ShieldCheck, tone: 'purple' },
       ]
     : [
-        { label: 'Create Chama', to: ROUTES.app.createChama, icon: Plus, tone: 'green' },
+        { label: 'Create Chama', to: ROUTES.createChama.type, icon: Plus, tone: 'green' },
         { label: 'Join Chama', to: ROUTES.app.joinChama, icon: UserPlus, tone: 'blue' },
       ];
 
