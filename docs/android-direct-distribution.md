@@ -6,14 +6,14 @@ CHAMA360 Android releases are distributed as signed APKs from the official HTTPS
 
 1. Create a production Android keystore and keep encrypted offline backups.
 2. Copy `client/android/keystore.properties.example` to `client/android/keystore.properties` and enter the real values. Neither file nor the keystore may be committed.
-3. Configure `client/.env.production` with HTTPS `VITE_API_URL` and `VITE_ANDROID_API_URL` values.
+3. Confirm the release build script embeds `https://chamaz360.co.ke/api/v1` for both `VITE_API_URL` and `VITE_ANDROID_API_URL`.
 4. Host the final signed APK at a stable HTTPS URL on the official domain.
 5. Configure the backend mobile-release environment variables documented in `.env.example`.
 
 ## Release procedure
 
 1. Increase `versionCode`, `versionName`, and the client package version.
-2. Build and sign the release APK with `npm --prefix client run mobile:release`.
+2. Build and sign the release APK with `npm --prefix client run mobile:release`. This command uses the fixed production API; emulator and LAN settings remain confined to development builds.
 3. Generate metadata:
 
    ```text

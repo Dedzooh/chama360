@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '../../design-system';
 import { ROUTES } from '../../config/routes';
 
-const supportEmail = import.meta.env.VITE_SUPPORT_EMAIL || 'support@chama360.co.ke';
+const supportEmail = import.meta.env.VITE_SUPPORT_EMAIL || 'support@chamaz360.co.ke';
 
 export const Help = () => (
   <div className="space-y-6">

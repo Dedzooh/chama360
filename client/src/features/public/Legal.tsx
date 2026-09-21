@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { ROUTES } from '../../config/routes';
 import { PublicPageFrame } from '../../components/PublicPageFrame';
 
-const supportEmail = import.meta.env.VITE_SUPPORT_EMAIL || 'support@chama360.co.ke';
+const supportEmail = import.meta.env.VITE_SUPPORT_EMAIL || 'support@chamaz360.co.ke';
 const updated = '14 July 2026';
 
 export const Legal = () => (

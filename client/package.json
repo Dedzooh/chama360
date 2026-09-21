@@ -1,13 +1,14 @@
 {
   "name": "client",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:phone": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "build:android": "tsc -b && vite build --mode android",
+    "build:android:release": "tsc -b && node scripts/build-android-release.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "phone:url": "node scripts/phone-dev.mjs url",
@@ -21,7 +22,7 @@
     "mobile:sync:android": "npm run mobile:assets && npm run build:android && npx cap sync android",
     "mobile:add:android": "npx cap add android",
     "mobile:open:android": "npx cap open android",
-    "mobile:release": "npm run mobile:assets && npm run build:android && npx cap sync android && cd android && gradlew.bat assembleRelease",
+    "mobile:release": "npm run mobile:assets && npm run build:android:release && npx cap sync android && cd android && gradlew.bat assembleRelease",
     "mobile:release-metadata": "node scripts/android-release-metadata.mjs"
   },
   "dependencies": {

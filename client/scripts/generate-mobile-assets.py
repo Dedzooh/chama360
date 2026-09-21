@@ -8,8 +8,15 @@ from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LOGO_PATH = ROOT / "public" / "logo.png"
-ICON_PATH = ROOT / "public" / "brand-symbol.png"
+REPOSITORY_ROOT = ROOT.parent
+LOGO_PATH = next(
+    (path for path in (ROOT / "public" / "logo.png", REPOSITORY_ROOT / "CHAMA LOGO.png") if path.exists()),
+    ROOT / "public" / "logo.png",
+)
+ICON_PATH = next(
+    (path for path in (ROOT / "public" / "brand-symbol.png", REPOSITORY_ROOT / "CHAMA ICON.png") if path.exists()),
+    ROOT / "public" / "brand-symbol.png",
+)
 RES_DIR = ROOT / "android" / "app" / "src" / "main" / "res"
 MOBILE_ASSET_DIR = ROOT / "mobile-assets"
 
@@ -147,8 +154,10 @@ def make_card(target_size: int, plate_size: int, logo_scale: float, source_path:
 
 def make_icon(size: int) -> Image.Image:
     canvas = make_background((size, size), "#f0fdf4", "#d1fae5")
-    plate_size = int(size * CARD_RATIO)
-    card = make_card(size, plate_size, LOGO_RATIO, ICON_PATH)
+    # The official icon source already contains its own framed lockup, so keep it
+    # large enough to remain identifiable at legacy launcher-icon sizes.
+    plate_size = int(size * 0.9)
+    card = make_card(size, plate_size, 0.7, ICON_PATH)
     canvas.alpha_composite(card)
     return canvas
 
@@ -277,5 +286,7 @@ def generate_assets() -> None:
 if __name__ == "__main__":
     if not LOGO_PATH.exists():
         raise SystemExit(f"Missing logo source at {LOGO_PATH}")
+    if not ICON_PATH.exists():
+        raise SystemExit(f"Missing icon source at {ICON_PATH}")
     generate_assets()
     print("Generated Android icon and splash assets.")

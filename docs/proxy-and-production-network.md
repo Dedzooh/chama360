@@ -21,7 +21,7 @@ requires `TRUST_PROXY_HOPS=2` only when both external proxy hops forward the cli
 Production Docker builds require `VITE_ANDROID_API_URL` to be supplied as an explicit `https://` URL. The production Compose file intentionally has no public-IP fallback:
 
 ```powershell
-$env:VITE_ANDROID_API_URL = 'https://api.example.com/api/v1'
+$env:VITE_ANDROID_API_URL = 'https://chamaz360.co.ke/api/v1'
 docker compose -f docker-compose.prod.yml build web
 ```
 

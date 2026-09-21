@@ -53,7 +53,7 @@ npm run preview
 - `npm run mobile:sync` - generate assets, build, and sync Android only
 - `npm run mobile:add:android` - add the Android platform again if needed
 - `npm run mobile:open:android` - open the Android project in Android Studio
-- `npm run mobile:release` - generate assets, build, sync, and assemble a signed release APK
+- `npm run mobile:release` - generate assets, embed the production HTTPS API, sync, and assemble a signed release APK
 
 ### Backend URL for Android
 
@@ -61,7 +61,7 @@ The packaged Android app cannot use browser localhost. Use one of these:
 
 - `VITE_ANDROID_API_URL=http://10.0.2.2:3000/api/v1` for the Android emulator
 - `VITE_ANDROID_API_URL=http://192.168.100.22:3000/api/v1` for a physical phone on the same Wi-Fi network
-- `VITE_API_URL=https://your-production-api.example/api/v1` for production builds
+- `VITE_API_URL=https://chamaz360.co.ke/api/v1` and `VITE_ANDROID_API_URL=https://chamaz360.co.ke/api/v1` for production builds
 
 If `VITE_ANDROID_API_URL` is not set, the app falls back to `VITE_API_URL`, then to `http://10.0.2.2:3000/api/v1`.
 
@@ -74,8 +74,8 @@ npm run mobile:build:android
 ### Native notes
 
 - The app uses `HashRouter`, which works well inside Capacitor.
-- The Android manifest allows cleartext traffic so the emulator can reach a local HTTP backend during development.
-- The release build uses a local keystore stored in `client/android/release.keystore` and reads credentials from `client/android/keystore.properties`.
+- Release builds disable cleartext traffic. The `lanTest` build type permits it for controlled local-network testing.
+- The release build uses the ignored `client/android/chamaz360-production.jks` keystore and reads credentials from the ignored `client/android/keystore.properties` file.
 
 ### Typical Android workflow
 
@@ -94,9 +94,11 @@ npm run mobile:build:android
 
 ### Release workflow
 
-1. Update `client/android/keystore.properties` if you want to change the local signing credentials.
+1. Confirm that `client/android/keystore.properties` points to the original release keystore used to sign the installed app.
 2. Run `npm run mobile:release`.
 3. Find the signed APK under `client/android/app/build/outputs/apk/release/`.
+
+The release script always embeds `https://chamaz360.co.ke/api/v1`. Development builds made with `build:android` or `mobile:build:android` may continue to use `.env.android` for emulator or LAN APIs.
 
 ### Android auto-update
 
