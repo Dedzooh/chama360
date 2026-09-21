@@ -207,7 +207,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
             </div>
 
             <div className="flex items-center gap-1.5">
-              {canManageWorkspace ? <Link to={ROUTES.app.upgrade} className="app-plan-chip"><Crown /> {subscriptionPlan}</Link> : null}
+              <Link to={ROUTES.app.upgrade} className="app-plan-chip"><Crown /> {subscriptionPlan}</Link>
               <IconButton
                 label={unreadNotifications ? `Notifications, ${unreadNotifications} unread` : 'Notifications'}
                 icon={<span className="relative inline-flex"><Bell className="h-4 w-4" />{unreadNotifications ? <span className="absolute -right-2.5 -top-2.5 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-black leading-none text-white ring-2 ring-white">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span> : null}</span>}
