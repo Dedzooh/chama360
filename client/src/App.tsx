@@ -49,7 +49,6 @@ const AdminWallet = page(() => import('./features/admin'), 'AdminWallet');
 const AdminChamaSettings = page(() => import('./features/admin'), 'AdminChamaSettings');
 const AdminAuditLogs = page(() => import('./features/admin'), 'AdminAuditLogs');
 const CreateChama = page(() => import('./features/onboarding'), 'CreateChama');
-const CreateChamaRoot = page(() => import('./features/onboarding'), 'CreateChamaRoot');
 const ChooseTypeStep = page(() => import('./features/onboarding'), 'ChooseTypeStep');
 const ChamaDetailsStep = page(() => import('./features/onboarding'), 'ChamaDetailsStep');
 const EnableModulesStep = page(() => import('./features/onboarding'), 'EnableModulesStep');
@@ -108,17 +107,19 @@ function App() {
                 <Route path={ROUTES.platform.subscriptions} element={<PlatformSubscriptions />} />
               </Route>
 
-              <Route path={ROUTES.app.createChama} element={<CreateChama />}>
-                <Route index element={<CreateChamaRoot />} />
-                <Route path="type" element={<ChooseTypeStep />} />
-                <Route path="details" element={<ChamaDetailsStep />} />
-                <Route path="modules" element={<EnableModulesStep />} />
-                <Route path="contributions" element={<ContributionRulesStep />} />
-                <Route path="loans" element={<LoanRulesStep />} />
-                <Route path="welfare" element={<WelfareRulesStep />} />
-                <Route path="committee" element={<CommitteeStep />} />
-                <Route path="invite" element={<InviteMembersStep />} />
-                <Route path="review" element={<ReviewSetupStep />} />
+              <Route path={ROUTES.app.createChama}>
+                <Route index element={<Navigate to={ROUTES.createChama.type} replace />} />
+                <Route element={<CreateChama />}>
+                  <Route path="type" element={<ChooseTypeStep />} />
+                  <Route path="details" element={<ChamaDetailsStep />} />
+                  <Route path="modules" element={<EnableModulesStep />} />
+                  <Route path="contributions" element={<ContributionRulesStep />} />
+                  <Route path="loans" element={<LoanRulesStep />} />
+                  <Route path="welfare" element={<WelfareRulesStep />} />
+                  <Route path="committee" element={<CommitteeStep />} />
+                  <Route path="invite" element={<InviteMembersStep />} />
+                  <Route path="review" element={<ReviewSetupStep />} />
+                </Route>
               </Route>
 
               <Route path="/chamas/:organizationId">
