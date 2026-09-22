@@ -7,11 +7,13 @@ RUN npm ci
 COPY client/ ./
 ARG VITE_API_URL=/api/v1
 ARG VITE_ANDROID_API_URL
+ARG VITE_PUBLIC_WEB_URL
 ARG ALLOW_INSECURE_ANDROID_API=false
 RUN test -n "$VITE_ANDROID_API_URL" && case "$VITE_ANDROID_API_URL" in https://*) ;; http://* ) test "$ALLOW_INSECURE_ANDROID_API" = "true" || { echo "VITE_ANDROID_API_URL must be an explicit HTTPS URL (or set ALLOW_INSECURE_ANDROID_API=true for temporary IP testing)" >&2; exit 1; } ;; *) echo "VITE_ANDROID_API_URL must use http:// or https://" >&2; exit 1 ;; esac
 ARG VITE_SUPPORT_EMAIL=support@chamaz360.co.ke
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_ANDROID_API_URL=$VITE_ANDROID_API_URL
+ENV VITE_PUBLIC_WEB_URL=$VITE_PUBLIC_WEB_URL
 ENV VITE_SUPPORT_EMAIL=$VITE_SUPPORT_EMAIL
 RUN npm run build
 
