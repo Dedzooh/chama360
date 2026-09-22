@@ -1,5 +1,5 @@
 import { getLifecycleTransition } from '../services/subscriptionLifecycleService';
-import { planHasFeature } from '../config/subscriptions';
+import { planHasFeature, subscriptionPlans } from '../config/subscriptions';
 import { isPlatformRole, isSelfPlatformOwnerDemotion, isSystemAdminEmail, requireSystemAdmin } from '../middleware/systemAdmin';
 import { ForbiddenError } from '../middleware/errorHandler';
 
@@ -32,6 +32,15 @@ describe('subscription release safety', () => {
     expect(planHasFeature('GROWTH', 'AUDIT_LOGS')).toBe(true);
     expect(planHasFeature('GROWTH', 'ADMIN_CONTROLS')).toBe(true);
     expect(planHasFeature('PRO', 'AUDIT_LOGS')).toBe(true);
+  });
+  it('applies the requested starter and standard pricing tiers while keeping the rest unchanged', () => {
+    expect(subscriptionPlans.STARTER.monthlyPrice).toBe(150);
+    expect(subscriptionPlans.STARTER.annualPrice).toBe(1500);
+    expect(subscriptionPlans.STARTER.memberLimit).toBe(30);
+    expect(subscriptionPlans.GROWTH.monthlyPrice).toBe(350);
+    expect(subscriptionPlans.GROWTH.annualPrice).toBe(3500);
+    expect(subscriptionPlans.GROWTH.memberLimit).toBe(50);
+    expect(subscriptionPlans.PRO.monthlyPrice).toBe(1799);
   });
   it('matches platform admins case-insensitively and rejects other users', () => {
     expect(isSystemAdminEmail(' Owner@Example.com ', ['owner@example.com'])).toBe(true);
