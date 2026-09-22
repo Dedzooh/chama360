@@ -39,12 +39,12 @@ export const TRAINING_SERVICES = [
 ] as const;
 
 export const SMS_CREDIT_PACKS = [
-  { credits: 100, price: 'Contact CHAMA360' },
-  { credits: 500, price: 'Contact CHAMA360' },
-  { credits: 1000, price: 'Contact CHAMA360' },
+  { credits: 100, price: 'Contact CHAMAZ360' },
+  { credits: 500, price: 'Contact CHAMAZ360' },
+  { credits: 1000, price: 'Contact CHAMAZ360' },
 ] as const;
 
-export const VAULT_ADDON = { name: 'Chama Vault', price: 'Contact CHAMA360', description: "Periodic downloadable archives of members, contributions, loans, welfare, meetings, votes, documents and audit logs." } as const;
+export const VAULT_ADDON = { name: 'Chama Vault', price: 'Contact CHAMAZ360', description: "Periodic downloadable archives of members, contributions, loans, welfare, meetings, votes, documents and audit logs." } as const;
 
 export const getPlanPriceDefinition = (plan: (typeof SUBSCRIPTION_PLANS)[number], memberCount?: number | null) => {
   if (memberCount === null || memberCount === undefined) return plan;

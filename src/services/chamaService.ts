@@ -35,6 +35,8 @@ import {
   isEditableChama,
   isPendingMemberStatus,
 } from '../utils/chamaLifecycle';
+import { createPublicHashUrl } from '../utils/publicWebUrl';
+import { sendTransactionalEmail } from './notificationDeliveryService';
 
 // Initialize services
 const notificationService = new NotificationService(prisma);
@@ -192,7 +194,8 @@ export class ChamaService {
     const shareableLink = uuidv4();
 
     // Generate QR code for the shareable link
-    const qrCodeData = `${process.env.FRONTEND_URL || 'https://app.chama.com'}/join/${shareableLink}`;
+    const invitationUrl = createPublicHashUrl(`/join/${shareableLink}`);
+    const qrCodeData = invitationUrl;
     const qrCode = await QRCode.toDataURL(qrCodeData);
 
     // Create chama with founder as first member
@@ -237,7 +240,7 @@ export class ChamaService {
         type: NotificationType.GENERAL_UPDATE,
         recipientId: founderId,
         title: 'Chama Created Successfully',
-        message: `Your ${data.type} chama "${data.name}" has been created successfully. Share your link: ${process.env.FRONTEND_URL}/join/${shareableLink}`,
+        message: `Your ${data.type} chama "${data.name}" has been created successfully. Share your link: ${invitationUrl}`,
         priority: NotificationPriority.INFO,
       },
       scheduledAt: new Date(Date.now() + 1000), // 1 second delay
@@ -1360,6 +1363,10 @@ export class ChamaService {
 
     // For each email, check if user exists and send invitation
     const invitations = [];
+    const invitationUrl = createPublicHashUrl(`/join/${chama.shareableLink}`);
+    const invitationMessage = message.trim()
+      ? `${message.trim()}\n\nJoin ${chama.name} on CHAMAZ360: ${invitationUrl}`
+      : `You've been invited to join ${chama.name} on CHAMAZ360. Visit: ${invitationUrl}`;
 
     for (const email of emails) {
       const existingUser = await prisma.user.findUnique({
@@ -1408,20 +1415,27 @@ export class ChamaService {
           type: NotificationType.GENERAL_UPDATE,
           priority: NotificationPriority.INFO,
           title: `Invitation to join ${chama.name}`,
-          message: message || `You've been invited to join ${chama.name}. Visit: ${process.env.FRONTEND_URL}/join/${chama.shareableLink}`,
+          message: invitationMessage,
           channels: inAppChannel(existingUser.id),
         });
+        invitations.push({ email, status: 'NOTIFIED' });
       } else {
-        // User doesn't exist, would send email invitation
-        // For now, we'll log this as it requires email service integration
-        logger.info('Email invitation would be sent', {
-          email,
-          chamaId,
-          chamaName: chama.name,
-        });
+        try {
+          await sendTransactionalEmail(
+            email,
+            `Invitation to join ${chama.name} on CHAMAZ360`,
+            invitationMessage,
+          );
+          invitations.push({ email, status: 'EMAIL_SENT' });
+        } catch (error) {
+          logger.warn('Chama email invitation delivery failed', {
+            email,
+            chamaId,
+            error: error instanceof Error ? error.message : 'Unknown email delivery error',
+          });
+          invitations.push({ email, status: 'EMAIL_FAILED' });
+        }
       }
-
-      invitations.push({ email, status: existingUser ? 'NOTIFIED' : 'EMAIL_SENT' });
     }
 
     return invitations;

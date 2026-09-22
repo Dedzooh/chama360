@@ -91,7 +91,7 @@ export const EnableModulesStep = () => {
 
       <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         <p className="font-black">Plan access is confirmed before payment</p>
-        <p className="mt-1 leading-6">You can include paid modules in the setup. The Chama is saved first, then CHAMA360 shows the minimum plan required to unlock them for the whole organization.</p>
+        <p className="mt-1 leading-6">You can include paid modules in the setup. The Chama is saved first, then CHAMAZ360 shows the minimum plan required to unlock them for the whole organization.</p>
       </Card>
 
       <Card className="space-y-4 p-5">

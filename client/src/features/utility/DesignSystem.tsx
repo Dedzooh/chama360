@@ -77,7 +77,7 @@ export const DesignSystem = () => {
     <div className="space-y-6 pb-10">
       <TopAppBar
         subtitle="Design system"
-        title="CHAMA360"
+        title="CHAMAZ360"
         onBack={() => window.history.back()}
         actions={
           <>
@@ -90,7 +90,7 @@ export const DesignSystem = () => {
       <section className="hero-card overflow-hidden p-6 sm:p-8">
         <div className="hero-gradient rounded-[1.35rem] p-6 text-white">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/75">Premium fintech foundation</p>
-          <h1 className="mt-2 text-3xl font-black sm:text-4xl">A reusable system for every CHAMA360 screen</h1>
+          <h1 className="mt-2 text-3xl font-black sm:text-4xl">A reusable system for every CHAMAZ360 screen</h1>
           <p className="mt-3 max-w-3xl text-white/85">
             Tokens, Tailwind mapping, CSS variables, and shared UI primitives aligned to the same visual language.
           </p>

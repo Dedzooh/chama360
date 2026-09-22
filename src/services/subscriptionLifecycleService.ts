@@ -75,7 +75,7 @@ export const subscriptionLifecycleService = {
       if (subscription.trialEndsAt) {
         const days = Math.ceil((subscription.trialEndsAt.getTime() - now.getTime()) / 86400000);
         const marker = days <= 0 ? `TRIAL_EXPIRED_${subscription.trialEndsAt.toISOString()}` : [7, 3, 1].includes(days) ? `TRIAL_${days}D_${subscription.trialEndsAt.toISOString()}` : null;
-        if (marker) await notifyAdministrators(subscription, marker, days <= 0 ? `${subscription.organization.name} trial has ended` : `${subscription.organization.name} trial ends in ${days} day${days === 1 ? '' : 's'}`, days <= 0 ? 'Choose a CHAMA360 plan now to restore full chama access and retain your records.' : 'Open Plans to choose Starter, Growth, Pro, or Enterprise before premium access ends.', days <= 1 ? 'CRITICAL' : 'IMPORTANT');
+        if (marker) await notifyAdministrators(subscription, marker, days <= 0 ? `${subscription.organization.name} trial has ended` : `${subscription.organization.name} trial ends in ${days} day${days === 1 ? '' : 's'}`, days <= 0 ? 'Choose a CHAMAZ360 plan now to restore full chama access and retain your records.' : 'Open Plans to choose Starter, Growth, Pro, or Enterprise before premium access ends.', days <= 1 ? 'CRITICAL' : 'IMPORTANT');
       } else if (subscription.currentPeriodEnd) {
         const days = Math.ceil((subscription.currentPeriodEnd.getTime() - now.getTime()) / 86400000);
         const marker = subscription.status === 'PAST_DUE' ? `GRACE_${subscription.currentPeriodEnd.toISOString()}` : [7, 3, 1].includes(days) ? `RENEWAL_${days}D_${subscription.currentPeriodEnd.toISOString()}` : null;
@@ -93,7 +93,7 @@ export const subscriptionLifecycleService = {
       ];
       if (!channels.length) continue;
       const dedupeKey = `ORG_SUBSCRIPTION_PAYMENT_FAILED_${payment.id}`;
-      await prisma.notification.upsert({ where: { dedupeKey }, update: {}, create: { dedupeKey, recipientId: payment.user.id, organizationId: payment.organizationId, type: 'GENERAL_UPDATE', priority: 'IMPORTANT', title: `${payment.organization?.name ?? 'Chama'} payment was not completed`, message: `${payment.failureReason || 'The payment could not be confirmed.'} Open Plans to retry safely; no subscription was activated or charged by CHAMA360.`, channels: { create: channels } } });
+      await prisma.notification.upsert({ where: { dedupeKey }, update: {}, create: { dedupeKey, recipientId: payment.user.id, organizationId: payment.organizationId, type: 'GENERAL_UPDATE', priority: 'IMPORTANT', title: `${payment.organization?.name ?? 'Chama'} payment was not completed`, message: `${payment.failureReason || 'The payment could not be confirmed.'} Open Plans to retry safely; no subscription was activated or charged by CHAMAZ360.`, channels: { create: channels } } });
     }
   },
 
@@ -110,7 +110,7 @@ export const subscriptionLifecycleService = {
         create: {
           dedupeKey, recipientId: subscription.userId, type: 'GENERAL_UPDATE', priority: marker === 'GRACE' || marker === '1D' ? 'IMPORTANT' : 'INFO',
           title: marker === 'GRACE' ? 'Your subscription is in its grace period' : `Your ${subscription.plan} plan renews in ${days} day${days === 1 ? '' : 's'}`,
-          message: marker === 'GRACE' ? 'Renew now to keep your premium CHAMA360 features active.' : `Renew before ${subscription.currentPeriodEnd?.toLocaleDateString()} to avoid interruption.`,
+          message: marker === 'GRACE' ? 'Renew now to keep your premium CHAMAZ360 features active.' : `Renew before ${subscription.currentPeriodEnd?.toLocaleDateString()} to avoid interruption.`,
           channels: { create: { type: 'IN_APP', address: subscription.userId } },
         },
       });

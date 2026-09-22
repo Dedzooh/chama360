@@ -66,7 +66,7 @@ class SubscriptionPaymentService {
       PhoneNumber: phone,
       CallBackURL: config.mpesa.subscriptionCallbackUrl,
       AccountReference: input.reference.slice(0, 12),
-      TransactionDesc: 'CHAMA360 subscription',
+      TransactionDesc: 'CHAMAZ360 subscription',
     }, { headers: { Authorization: `Bearer ${await this.accessToken()}` }, timeout: 30000 });
     return response.data;
   }

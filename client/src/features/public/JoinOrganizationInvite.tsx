@@ -53,7 +53,7 @@ export const JoinOrganizationInvite = () => {
   };
 
   const returnTo = ROUTES.invitations.organization(token ?? '');
-  return <PublicPageFrame width="narrow" eyebrow="Group invitation" title="Join a group on CHAMA360" description="Review the group before requesting to join. Joining is free.">
+  return <PublicPageFrame width="narrow" eyebrow="Group invitation" title="Join a group on CHAMAZ360" description="Review the group before requesting to join. Joining is free.">
     <Card className="mt-5 space-y-4 p-6">
       {loading ? <p>Loading invitation…</p> : null}
       {error ? <p role="alert" className="text-rose-700">{error}</p> : null}
@@ -61,7 +61,7 @@ export const JoinOrganizationInvite = () => {
         <div><p className="text-sm text-[var(--ds-text-muted)]">{organization.organizationType.replaceAll('_', ' ')}</p><h2 className="text-xl font-black text-[var(--ds-secondary)]">{organization.name}</h2>{organization.description ? <p className="mt-2 text-sm">{organization.description}</p> : null}</div>
         {joined ? <p className="rounded-xl bg-emerald-50 p-4 text-emerald-800">Your request is with the group’s leaders for approval. <Link className="underline" to={ROUTES.app.myChamas}>View my groups</Link></p>
           : isAuthenticated ? <Button onClick={() => void requestToJoin()} loading={joining} className="w-full">Request to join free</Button>
-            : <div className="space-y-3"><p className="rounded-xl bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">New to CHAMA360? Create your account first and we will bring you back here to join this Chama.</p><div className="grid gap-3 sm:grid-cols-2"><Link className="btn btn-primary justify-center" to={ROUTES.auth.login} state={{ from: returnTo }}>Sign in to join</Link><Link className="btn btn-outline justify-center" to={ROUTES.auth.register} state={{ from: returnTo }}>Create account</Link></div></div>}
+            : <div className="space-y-3"><p className="rounded-xl bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">New to CHAMAZ360? Create your account first and we will bring you back here to join this Chama.</p><div className="grid gap-3 sm:grid-cols-2"><Link className="btn btn-primary justify-center" to={ROUTES.auth.login} state={{ from: returnTo }}>Sign in to join</Link><Link className="btn btn-outline justify-center" to={ROUTES.auth.register} state={{ from: returnTo }}>Create account</Link></div></div>}
       </> : null}
     </Card>
   </PublicPageFrame>;

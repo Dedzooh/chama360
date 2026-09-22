@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 import math
+import os
+import tempfile
+import time
 
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont, ImageOps
 
@@ -70,7 +73,12 @@ def ensure_parent(path: Path) -> None:
 
 def load_logo(path: Path = LOGO_PATH) -> Image.Image:
     logo = Image.open(path).convert("RGBA")
-    return logo
+    width, height = logo.size
+    if path == ICON_PATH:
+        # Use only the established emblem; the legacy source wordmark says
+        # CHAMA360 and is rendered separately with the current public brand.
+        return logo.crop((int(width * 0.27), int(height * 0.13), int(width * 0.73), int(height * 0.61)))
+    return logo.crop((int(width * 0.23), int(height * 0.04), int(width * 0.77), int(height * 0.64)))
 
 
 def add_vertical_gradient(canvas: Image.Image, top_hex: str, bottom_hex: str) -> None:
@@ -198,7 +206,7 @@ def make_splash(width: int, height: int) -> Image.Image:
         subtitle_font = load_font(max(16, height // 16), bold=False)
         title_x = card_x + plate_size + width // 18
         title_top = max(height // 6, center_y - height // 6)
-        title = "CHAMA360"
+        title = "CHAMAZ360"
         title_font = fit_text(draw, title, title_font, width - title_x - width // 10)
         draw.text((title_x, title_top), title, fill=TEXT_COLOR, font=title_font)
         subtitle = "Together. Grow. Prosper."
@@ -210,7 +218,7 @@ def make_splash(width: int, height: int) -> Image.Image:
         card_y = height // 2 - plate_size
         canvas.alpha_composite(card, (card_x, card_y))
 
-        title = "CHAMA360"
+        title = "CHAMAZ360"
         subtitle = "Together. Grow. Prosper."
         title_font = load_font(max(28, width // 10), bold=True)
         subtitle_font = load_font(max(16, width // 16), bold=False)
@@ -230,7 +238,28 @@ def make_splash(width: int, height: int) -> Image.Image:
 
 def write_png(image: Image.Image, path: Path) -> None:
     ensure_parent(path)
-    image.save(path, format="PNG")
+    # Save beside the destination, then atomically replace it. Directly opening
+    # existing PNGs with "w+b" intermittently fails on Windows when Explorer,
+    # antivirus, or an Android tool has a short-lived read handle open.
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.stem}-",
+        suffix=".tmp.png",
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        image.save(temporary_path, format="PNG")
+        for attempt in range(8):
+            try:
+                os.replace(temporary_path, path)
+                return
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def write_android_resources() -> None:

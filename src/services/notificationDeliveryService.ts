@@ -12,15 +12,15 @@ export const sendTransactionalEmail = async (address: string, title: string, mes
   if (!emailTransport || !config.email.from) throw new Error('Email provider is not configured');
   const plansUrl = `${config.server.webUrl.replace(/\/$/, '')}/upgrade`;
   await emailTransport.sendMail({
-    from: `CHAMA360 <${config.email.from}>`, to: address, subject: title,
+    from: `CHAMAZ360 <${config.email.from}>`, to: address, subject: title,
     text: `${message}\n\nManage your chama plan: ${plansUrl}`,
-    html: `<div style="margin:0;background:#f3f7f5;padding:32px 16px;font-family:Arial,sans-serif;color:#173042"><div style="max-width:600px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 12px 35px rgba(5,60,45,.10)"><div style="padding:24px 28px;background:linear-gradient(135deg,#087457,#0b2f4f);color:#fff"><strong style="font-size:22px">CHAMA<span style="color:#f0b829">360</span></strong><div style="margin-top:5px;font-size:12px;opacity:.8">TOGETHER · GROW · PROSPER</div></div><div style="padding:30px 28px"><h1 style="margin:0 0 14px;font-size:24px;color:#09253e">${escapeHtml(title)}</h1><p style="margin:0;color:#536674;line-height:1.7">${escapeHtml(message)}</p><a href="${plansUrl}" style="display:inline-block;margin-top:24px;padding:13px 20px;border-radius:10px;background:#087457;color:#fff;text-decoration:none;font-weight:700">Manage chama plan</a><p style="margin:28px 0 0;color:#89969f;font-size:12px">This operational message was sent to a chama administrator. Notification preferences can be managed inside CHAMA360.</p></div></div></div>`,
+    html: `<div style="margin:0;background:#f3f7f5;padding:32px 16px;font-family:Arial,sans-serif;color:#173042"><div style="max-width:600px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 12px 35px rgba(5,60,45,.10)"><div style="padding:24px 28px;background:linear-gradient(135deg,#087457,#0b2f4f);color:#fff"><strong style="font-size:22px">CHAMA<span style="color:#f0b829">360</span></strong><div style="margin-top:5px;font-size:12px;opacity:.8">TOGETHER · GROW · PROSPER</div></div><div style="padding:30px 28px"><h1 style="margin:0 0 14px;font-size:24px;color:#09253e">${escapeHtml(title)}</h1><p style="margin:0;color:#536674;line-height:1.7">${escapeHtml(message)}</p><a href="${plansUrl}" style="display:inline-block;margin-top:24px;padding:13px 20px;border-radius:10px;background:#087457;color:#fff;text-decoration:none;font-weight:700">Manage chama plan</a><p style="margin:28px 0 0;color:#89969f;font-size:12px">This operational message was sent to a chama administrator. Notification preferences can be managed inside CHAMAZ360.</p></div></div></div>`,
   });
 };
 
 export const sendTransactionalSms = async (address: string, message: string) => {
   if (!config.sms.baseUrl || !config.sms.apiKey || !config.sms.senderId) throw new Error('SMS provider is not configured');
-  const response = await fetch(config.sms.baseUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${config.sms.apiKey}` }, body: JSON.stringify({ to: address, message: `${message} Open CHAMA360 to manage your plan.`, senderId: config.sms.senderId }) });
+  const response = await fetch(config.sms.baseUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${config.sms.apiKey}` }, body: JSON.stringify({ to: address, message: `${message} Open CHAMAZ360 to manage your plan.`, senderId: config.sms.senderId }) });
   if (!response.ok) throw new Error(`SMS provider returned HTTP ${response.status}`);
 };
 

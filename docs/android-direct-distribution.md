@@ -1,6 +1,6 @@
 # Android direct distribution
 
-CHAMA360 Android releases are distributed as signed APKs from the official HTTPS website.
+CHAMAZ360 Android releases are distributed as signed APKs from the official HTTPS website.
 
 ## One-time setup
 

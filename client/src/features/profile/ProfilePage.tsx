@@ -211,7 +211,7 @@ export const Profile = () => {
           <div className="chama360-module-hero-copy">
             <p>{user ? `${user.firstName} ${user.lastName}` : 'Your profile'}</p>
             <h1>Profile and security</h1>
-            <small>Manage your CHAMA360 identity, password, and active device sessions.</small>
+            <small>Manage your CHAMAZ360 identity, password, and active device sessions.</small>
           </div>
           <div className="chama360-module-hero-actions">
             <a href="#profile-password">
@@ -394,7 +394,7 @@ export const Profile = () => {
                   <p className="text-[var(--ds-text-muted)]">{session.lastActivity ? new Date(session.lastActivity).toLocaleString() : 'Active now'}</p>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="min-w-0 truncate text-xs text-[var(--ds-text-muted)]">{session.userAgent ?? 'CHAMA360 app session'}</p>
+                  <p className="min-w-0 truncate text-xs text-[var(--ds-text-muted)]">{session.userAgent ?? 'CHAMAZ360 app session'}</p>
                   {!session.current && session.sessionId ? (
                     <Button
                       type="button"

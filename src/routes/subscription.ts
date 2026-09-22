@@ -153,13 +153,13 @@ router.post('/custom-request', authenticate, asyncHandler(async (req: Request, r
     data: { organizationId: input.organizationId, userId: req.user!.id, action: 'CREATE', entityType: 'CustomPlanRequest', entityId: request.id, newValues: { status: request.status, estimatedMembers: request.estimatedMembers } },
   });
   const confirmationTitle = 'Custom package request received';
-  const confirmationMessage = `CHAMA360 received the custom package requirements for ${membership.organization.name}. Our team will review them and contact ${input.contactName} to discuss scope, pricing, and onboarding.`;
+  const confirmationMessage = `CHAMAZ360 received the custom package requirements for ${membership.organization.name}. Our team will review them and contact ${input.contactName} to discuss scope, pricing, and onboarding.`;
   const adminUsers = config.systemAdminEmails.length ? await prisma.user.findMany({ where: { email: { in: config.systemAdminEmails } }, select: { id: true, email: true } }) : [];
   await Promise.all([
     prisma.notification.create({ data: { dedupeKey: `custom-plan:${request.id}:submitted:requester`, recipientId: req.user!.id, organizationId: input.organizationId, type: 'GENERAL_UPDATE', priority: 'IMPORTANT', title: confirmationTitle, message: confirmationMessage, channels: { create: [{ type: 'IN_APP', address: req.user!.id }, { type: 'EMAIL', address: input.contactEmail }] } } }),
     ...adminUsers.map((admin) => prisma.notification.create({ data: { dedupeKey: `custom-plan:${request.id}:submitted:admin:${admin.id}`, recipientId: admin.id, organizationId: input.organizationId, type: 'GENERAL_UPDATE', priority: 'IMPORTANT', title: `Custom package request: ${membership.organization.name}`, message: `${input.contactName} submitted custom requirements for approximately ${input.estimatedMembers?.toLocaleString() ?? 'an unspecified number of'} members. Review the request in Platform Subscriptions.`, channels: { create: [{ type: 'IN_APP', address: admin.id }, { type: 'EMAIL', address: admin.email }] } } })),
   ]);
-  res.status(201).json({ request, message: 'Your requirements were sent to CHAMA360. An administrator will contact your organization to discuss scope, pricing, and onboarding.' });
+  res.status(201).json({ request, message: 'Your requirements were sent to CHAMAZ360. An administrator will contact your organization to discuss scope, pricing, and onboarding.' });
 }));
 
 router.post('/callback', asyncHandler(async (req: Request, res: Response) => {
@@ -271,7 +271,7 @@ router.post('/callback', asyncHandler(async (req: Request, res: Response) => {
             type: 'GENERAL_UPDATE',
             priority: 'IMPORTANT',
             title: 'Referral reward earned',
-            message: `${convertedReferral.referredOrganization?.name ?? 'Your referred Chama'} purchased an annual CHAMA360 plan. Your one-month referral reward is ready for review.`,
+            message: `${convertedReferral.referredOrganization?.name ?? 'Your referred Chama'} purchased an annual CHAMAZ360 plan. Your one-month referral reward is ready for review.`,
             status: 'DELIVERED',
             sentAt: now,
             channels: { create: [{ type: 'IN_APP', address: convertedReferral.referrerId, status: 'DELIVERED', deliveredAt: now }] },

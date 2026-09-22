@@ -75,7 +75,7 @@ export const JoinInvite = () => {
   return (
     <main className="invite-page">
       <Card className="invite-card">
-        <Link to={ROUTES.auth.splash} className="invite-brand" aria-label="CHAMA360 home"><BrandLockup /></Link>
+        <Link to={ROUTES.auth.splash} className="invite-brand" aria-label="CHAMAZ360 home"><BrandLockup /></Link>
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-50 mb-3">
             <Users className="w-8 h-8 text-[var(--ds-primary)]" />

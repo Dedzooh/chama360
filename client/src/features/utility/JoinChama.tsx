@@ -97,7 +97,7 @@ export const JoinChama = () => {
             <strong>{loading ? 'Loading' : `${publicChamas.length} public`}</strong>
           </div>
           <div className="chama360-module-hero-copy">
-            <p>CHAMA360 access</p>
+            <p>CHAMAZ360 access</p>
             <h1>Join Chama</h1>
             <small>Use an invite code or browse public Chamas to request membership.</small>
           </div>

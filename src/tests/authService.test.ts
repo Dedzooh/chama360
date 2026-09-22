@@ -540,9 +540,9 @@ describe('AuthService', () => {
 
     it('creates an authenticator-compatible provisioning URI', () => {
       const uri = AuthService.buildMfaProvisioningUri('ABC234', 'member@example.com');
-      expect(uri).toContain('otpauth://totp/CHAMA360%3Amember%40example.com');
+      expect(uri).toContain('otpauth://totp/CHAMAZ360%3Amember%40example.com');
       expect(uri).toContain('secret=ABC234');
-      expect(uri).toContain('issuer=CHAMA360');
+      expect(uri).toContain('issuer=CHAMAZ360');
     });
 
     it('encrypts MFA secrets with user-bound tamper detection', () => {

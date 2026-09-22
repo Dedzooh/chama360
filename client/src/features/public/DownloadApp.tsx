@@ -7,7 +7,7 @@ import { Card } from '../../design-system';
 import { PublicPageFrame } from '../../components/PublicPageFrame';
 import { APP_VERSION } from '../../config/appVersion';
 
-const bundledApkUrl = `/downloads/chama360-${APP_VERSION}.apk`;
+const bundledApkUrl = `/downloads/chamaz360-${APP_VERSION}.apk`;
 
 export const DownloadApp = () => {
   const [release, setRelease] = useState<AppUpdateState | null>(null);
@@ -31,8 +31,8 @@ export const DownloadApp = () => {
     <PublicPageFrame
       width="narrow"
       eyebrow="Official release"
-      title="Download CHAMA360 for Android"
-      description="Install CHAMA360 only from this official page. Android will ask you to approve installation from your browser."
+      title="Download CHAMAZ360 for Android"
+      description="Install CHAMAZ360 only from this official page. Android will ask you to approve installation from your browser."
     >
         {error ? <Card className="mt-5 border-rose-200 bg-rose-50 p-5 text-rose-800">{error}</Card> : null}
 
@@ -40,7 +40,7 @@ export const DownloadApp = () => {
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-1 h-6 w-6 shrink-0 text-emerald-700" />
             <div>
-              <h2 className="text-xl font-black text-[var(--ds-secondary)]">CHAMA360 for Android</h2>
+              <h2 className="text-xl font-black text-[var(--ds-secondary)]">CHAMAZ360 for Android</h2>
               <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Version {release?.latestVersion ?? APP_VERSION}{release?.releasedAt ? ` · Released ${new Date(release.releasedAt).toLocaleDateString()}` : ''}</p>
               {release?.releaseNotes ? <p className="mt-3 text-sm text-[var(--ds-text-muted)]">{release.releaseNotes}</p> : null}
             </div>
@@ -61,7 +61,7 @@ export const DownloadApp = () => {
           <ol className="mt-6 list-decimal space-y-2 pl-5 text-sm text-[var(--ds-text-muted)]">
             <li>Download the APK from this page.</li>
             <li>When Android asks, allow your browser to install this app.</li>
-            <li>Confirm the app name is CHAMA360 before installing.</li>
+            <li>Confirm the app name is CHAMAZ360 before installing.</li>
             <li>Turn off the browser's install permission again after installation.</li>
           </ol>
         </Card>

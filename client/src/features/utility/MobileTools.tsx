@@ -46,7 +46,7 @@ export const MobileTools = () => {
   const shareText = useMemo(
     () =>
       [
-        'CHAMA360 mobile share',
+        'CHAMAZ360 mobile share',
         currentOrganization ? `Workspace: ${currentOrganization.name}` : null,
         user ? `User: ${user.firstName} ${user.lastName}` : null,
         note.trim() ? `Note: ${note.trim()}` : null,
@@ -60,7 +60,7 @@ export const MobileTools = () => {
     try {
       if (navigator.share) {
         await navigator.share({
-          title: 'CHAMA360',
+          title: 'CHAMAZ360',
           text: shareText,
         });
         setMessage('Share sheet opened.');
@@ -88,7 +88,7 @@ export const MobileTools = () => {
 
   const exportWorkspaceSummary = () => {
     const content = [
-      'CHAMA360 workspace summary',
+      'CHAMAZ360 workspace summary',
       `Organization: ${currentOrganization?.name ?? 'None'}`,
       `User: ${user ? `${user.firstName} ${user.lastName}` : 'Guest'}`,
       `Connectivity: ${online ? 'Online' : 'Offline'}`,

@@ -3,7 +3,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ruleName = 'CHAMA360 local testing (TCP 3000, 5173)'
+$ruleName = 'CHAMAZ360 local testing (TCP 3000, 5173)'
 $ports = @(3000, 5173)
 $isAdministrator = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -22,7 +22,7 @@ $existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction Silently
 if ($existingRule) { $existingRule | Remove-NetFirewallRule }
 
 if ($Disable) {
-  Write-Host 'CHAMA360 LAN forwarding and firewall rules were removed.' -ForegroundColor Yellow
+  Write-Host 'CHAMAZ360 LAN forwarding and firewall rules were removed.' -ForegroundColor Yellow
   exit
 }
 
@@ -39,7 +39,7 @@ $wifiAddress = Get-NetIPAddress -AddressFamily IPv4 |
   Where-Object { $_.InterfaceAlias -match 'Wi-Fi|Ethernet' -and $_.IPAddress -notlike '169.254.*' } |
   Select-Object -ExpandProperty IPAddress -First 1
 
-Write-Host "CHAMA360 LAN access enabled (WSL: $wslAddress)." -ForegroundColor Green
+Write-Host "CHAMAZ360 LAN access enabled (WSL: $wslAddress)." -ForegroundColor Green
 if ($wifiAddress) {
   Write-Host "Website: http://${wifiAddress}:5173"
   Write-Host "API:     http://${wifiAddress}:3000/health"

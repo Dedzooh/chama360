@@ -26,7 +26,7 @@ export const AdminWorkspaceFrame = ({ title, subtitle, children }: AdminWorkspac
         <div className="chama360-module-hero-main">
           <div className="chama360-module-hero-topline">
             <span>Administration</span>
-            <strong>CHAMA360</strong>
+            <strong>CHAMAZ360</strong>
           </div>
           <div className="chama360-module-hero-copy">
             <h1>{title}</h1>

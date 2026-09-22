@@ -175,7 +175,7 @@ export const Reports = () => {
     workbook.Props = {
       Title: `${currentOrganization.name} Management Report`,
       Subject: 'Contributions, loans, and welfare management report',
-      Author: 'CHAMA360',
+      Author: 'CHAMAZ360',
       CreatedDate: new Date(),
     };
 
@@ -189,7 +189,7 @@ export const Reports = () => {
     };
 
     addSheet('Summary', [
-      ['CHAMA360 MANAGEMENT REPORT'],
+      ['CHAMAZ360 MANAGEMENT REPORT'],
       ['Chama', currentOrganization.name],
       ['Generated', new Date().toLocaleString('en-KE')],
       ['Purpose', 'Management overview for accountability, financial review, and committee decision-making.'],
@@ -324,7 +324,7 @@ export const Reports = () => {
         doc.setPage(page);
         doc.setFontSize(8);
         doc.setTextColor(100, 110, 120);
-        doc.text(`CHAMA360 • ${currentOrganization.name} • Generated ${new Date().toLocaleDateString('en-KE')}`, 14, 202);
+        doc.text(`CHAMAZ360 • ${currentOrganization.name} • Generated ${new Date().toLocaleDateString('en-KE')}`, 14, 202);
         doc.text(`Page ${page} of ${pages}`, pageWidth - 14, 202, { align: 'right' });
       }
     };

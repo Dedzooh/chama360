@@ -4,7 +4,7 @@ const phoneDevServerUrl = process.env.CHAMA_DEV_SERVER_URL?.trim();
 
 const config: CapacitorConfig = {
   appId: 'com.chama.app',
-  appName: 'CHAMA360',
+  appName: 'CHAMAZ360',
   webDir: 'dist',
   bundledWebRuntime: false,
   android: {

@@ -107,7 +107,7 @@ const envSchema = z.object({
   HEALTH_CHECK_INTERVAL: z.string().transform(val => parseInt(val)).default('30000'),
   METRICS_ENABLED: z.string().transform(val => val === 'true').default('true'),
   SYSTEM_ADMIN_EMAILS: z.string().default(''),
-  BILLING_BUSINESS_NAME: z.string().default('CHAMA360'),
+  BILLING_BUSINESS_NAME: z.string().default('CHAMAZ360'),
   BILLING_BUSINESS_ADDRESS: z.string().default('Nairobi, Kenya'),
   BILLING_TAX_PIN: z.string().default(''),
   BILLING_VAT_RATE: z.string().transform(val => parseFloat(val)).default('0'),

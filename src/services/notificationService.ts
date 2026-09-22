@@ -393,7 +393,7 @@ export class NotificationService {
   ): Promise<void> {
     await sendTransactionalEmail(
       email,
-      'Verify your CHAMA360 email',
+      'Verify your CHAMAZ360 email',
       `Hello ${firstName}, your email verification code is ${token}. It expires in 24 hours. Never share this code with anyone.`
     );
   }
@@ -401,8 +401,8 @@ export class NotificationService {
   static async sendPasswordReset(email: string, firstName: string, code: string): Promise<void> {
     await sendTransactionalEmail(
       email,
-      'Reset your CHAMA360 password',
-      `Hello ${firstName}, your CHAMA360 password reset code is ${code}. It expires in 15 minutes. Never share this code with anyone.`
+      'Reset your CHAMAZ360 password',
+      `Hello ${firstName}, your CHAMAZ360 password reset code is ${code}. It expires in 15 minutes. Never share this code with anyone.`
     );
   }
 
@@ -413,7 +413,7 @@ export class NotificationService {
     phone: string,
     code: string
   ): Promise<void> {
-    await sendTransactionalSms(phone, `Your CHAMA360 verification code is ${code}. It expires in 24 hours. Never share this code.`);
+    await sendTransactionalSms(phone, `Your CHAMAZ360 verification code is ${code}. It expires in 24 hours. Never share this code.`);
   }
 
   /**

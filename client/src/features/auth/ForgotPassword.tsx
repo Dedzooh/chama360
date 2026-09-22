@@ -44,7 +44,7 @@ const ForgotPassword = () => {
     <AuthFrame
       eyebrow="Account recovery"
       title="Recover access"
-      subtitle="Request a reset code for your CHAMA360 account."
+      subtitle="Request a reset code for your CHAMAZ360 account."
       icon={<MailCheck className="h-5 w-5" />}
       footer={<p className="text-sm text-[var(--ds-text-muted)]">We will send a reset flow to your registered email address.</p>}
     >

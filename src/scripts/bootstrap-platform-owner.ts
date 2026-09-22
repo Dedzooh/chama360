@@ -14,7 +14,7 @@ const bootstrap = async () => {
         throw new Error(`No existing user found for ${email}. The bootstrap command never creates accounts.`);
       }
       await prisma.user.update({ where: { id: user.id }, data: { platformRole: 'PLATFORM_OWNER' } });
-      console.log(`${email} is now a CHAMA360 PLATFORM_OWNER.`);
+      console.log(`${email} is now a CHAMAZ360 PLATFORM_OWNER.`);
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Platform owner bootstrap failed.');
       process.exitCode = 1;

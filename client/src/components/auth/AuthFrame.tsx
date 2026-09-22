@@ -13,14 +13,14 @@ interface AuthFrameProps {
   children: ReactNode;
 }
 
-export const AuthFrame = ({ eyebrow = 'CHAMA360', title, subtitle, footer, icon, children }: AuthFrameProps) => {
+export const AuthFrame = ({ eyebrow = 'CHAMAZ360', title, subtitle, footer, icon, children }: AuthFrameProps) => {
   return (
     <div className="auth-page auth-shell min-h-screen min-w-0 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full min-w-0 max-w-6xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="hero-gradient flex min-w-0 flex-col justify-between overflow-hidden rounded-[var(--ds-radius-2xl)] p-6 text-white shadow-[var(--ds-shadow-floating)] sm:p-8">
           <div className="max-w-xl min-w-0">
-            <Link to={ROUTES.auth.splash} className="auth-brand-link" aria-label="Back to CHAMA360 welcome page">
-              <BrandLockup className="auth-brand-lockup" label="CHAMA360" />
+            <Link to={ROUTES.auth.splash} className="auth-brand-link" aria-label="Back to CHAMAZ360 welcome page">
+              <BrandLockup className="auth-brand-lockup" label="CHAMAZ360" />
             </Link>
             <Badge tone="accent" className="mt-5 border-white/15 bg-white/10 text-white">
               {eyebrow}

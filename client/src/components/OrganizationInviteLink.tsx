@@ -3,6 +3,7 @@ import { Copy, Link2, RefreshCw, Share2 } from 'lucide-react';
 import { organizationService } from '../services/organizationService';
 import { ROUTES } from '../config/routes';
 import { getApiErrorMessage } from '../utils/apiError';
+import { createPublicHashUrl } from '../config/publicWebUrl';
 
 export const OrganizationInviteLink = ({ organizationId, organizationName }: { organizationId: string; organizationName: string }) => {
   const [token, setToken] = useState('');
@@ -18,7 +19,7 @@ export const OrganizationInviteLink = ({ organizationId, organizationName }: { o
     return () => { active = false; };
   }, [organizationId]);
 
-  const url = token ? `${window.location.origin}/#${ROUTES.invitations.organization(token)}` : '';
+  const url = token ? createPublicHashUrl(ROUTES.invitations.organization(token)) : '';
   const copy = async () => {
     if (!url) return;
     try {
@@ -49,8 +50,8 @@ export const OrganizationInviteLink = ({ organizationId, organizationName }: { o
     }
     try {
       await navigator.share({
-        title: `Join ${organizationName} on CHAMA360`,
-        text: `You are invited to join ${organizationName} on CHAMA360. Open this link to get started:`,
+        title: `Join ${organizationName} on CHAMAZ360`,
+        text: `You are invited to join ${organizationName} on CHAMAZ360. Open this link to get started:`,
         url,
       });
       setMessage('Invitation shared successfully.');
@@ -67,7 +68,7 @@ export const OrganizationInviteLink = ({ organizationId, organizationName }: { o
       <div className="flex flex-wrap gap-2">
         <button className="btn btn-primary" type="button" disabled={!url} onClick={() => void copy()}><Copy className="h-4 w-4" /> Copy link</button>
         {url && 'share' in navigator ? <button className="btn btn-outline" type="button" onClick={() => void share()}><Share2 className="h-4 w-4" /> Share</button> : null}
-        {url ? <a className="btn btn-outline" href={`https://wa.me/?text=${encodeURIComponent(`Join ${organizationName} on CHAMA360: ${url}`)}`} target="_blank" rel="noopener noreferrer">Share on WhatsApp</a> : null}
+        {url ? <a className="btn btn-outline" href={`https://wa.me/?text=${encodeURIComponent(`Join ${organizationName} on CHAMAZ360: ${url}`)}`} target="_blank" rel="noopener noreferrer">Share on WhatsApp</a> : null}
         <button className="btn btn-outline" type="button" disabled={busy} onClick={() => void rotate()}><RefreshCw className="h-4 w-4" /> Replace link</button>
       </div>
       {message ? <p role="status" className="text-sm text-[var(--ds-text-muted)]">{message}</p> : null}

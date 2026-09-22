@@ -1,4 +1,4 @@
-﻿# Chama App
+# CHAMAZ360
 
 A comprehensive platform for managing chamas in Kenya and East Africa. The system supports multiple chama types including SAVINGS, ROSCA, INVESTMENT, WELFARE, BUSINESS, HOUSING, FAMILY, CHURCH, YOUTH, STAFF, FARMERS, WOMEN, MEN, COMMUNITY, and HYBRID with financial management, governance tools, and multi-platform access.
 

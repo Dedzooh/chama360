@@ -627,7 +627,7 @@ export class AuthService {
   }
 
   static buildMfaProvisioningUri(secret: string, email: string): string {
-    const issuer = 'CHAMA360';
+    const issuer = 'CHAMAZ360';
     const label = `${issuer}:${email}`;
     return `otpauth://totp/${encodeURIComponent(label)}?secret=${encodeURIComponent(secret)}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
   }

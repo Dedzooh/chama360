@@ -366,7 +366,7 @@ export const MyChamas = () => {
               <BrandMark className="brand-mark" />
               <span>
                 <small>Good morning, {userFirstName}</small>
-                <strong>CHAMA360 workspace</strong>
+                <strong>CHAMAZ360 workspace</strong>
               </span>
             </div>
             <h1>My Chamas</h1>

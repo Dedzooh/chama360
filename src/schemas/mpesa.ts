@@ -23,7 +23,7 @@ export const initiateMpesaPaymentSchema = z.object({
   accountReference: z.string()
     .min(1, 'Account reference is required')
     .max(12, 'Account reference must be at most 12 characters')
-    .default('CHAMA360'),
+    .default('CHAMAZ360'),
   transactionDesc: z.string()
     .min(1, 'Transaction description is required')
     .max(13, 'Transaction description must be at most 13 characters')

@@ -1,4 +1,4 @@
-# Chama App - Frontend
+# CHAMAZ360 Frontend
 
 React + TypeScript + Vite frontend for the Chama App, now packaged with Capacitor for Android.
 

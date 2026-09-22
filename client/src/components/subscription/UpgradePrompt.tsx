@@ -15,7 +15,7 @@ export const UpgradePrompt = () => {
       <div className="upgrade-dialog">
         <button type="button" className="upgrade-close" onClick={close} aria-label="Close upgrade prompt"><X /></button>
         <span className="upgrade-crown"><Crown /></span>
-        <p className="upgrade-eyebrow">Unlock more with CHAMA360</p>
+        <p className="upgrade-eyebrow">Unlock more with CHAMAZ360</p>
         <h2 id="upgrade-title">Upgrade to use {copy.title}</h2>
         <p className="upgrade-description">{copy.description}</p>
         <div className="upgrade-options">

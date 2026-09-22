@@ -64,7 +64,7 @@ router.patch('/custom-requests/:id', asyncHandler(async (req: Request, res: Resp
   const input = z.object({ status: z.enum(['SUBMITTED', 'REVIEWING', 'CONTACTED', 'QUOTED', 'ACCEPTED', 'DECLINED', 'CLOSED']), adminNotes: z.string().trim().max(5000).optional() }).parse(req.body);
   const request = await prisma.customPlanRequest.update({ where: { id: z.string().cuid().parse(req.params.id) }, data: input, include: { organization: { select: { name: true } }, requestedBy: { select: { id: true, email: true } } } });
   const statusCopy: Record<string, string> = {
-    REVIEWING: 'CHAMA360 is reviewing your requirements.', CONTACTED: 'CHAMA360 has started the consultation with your organization.', QUOTED: 'Your tailored scope and quotation are ready for discussion.', ACCEPTED: 'Your custom package has been accepted and is moving to onboarding.', DECLINED: 'The custom package request was not continued.', CLOSED: 'The custom package consultation has been closed.', SUBMITTED: 'Your custom package request is awaiting review.',
+    REVIEWING: 'CHAMAZ360 is reviewing your requirements.', CONTACTED: 'CHAMAZ360 has started the consultation with your organization.', QUOTED: 'Your tailored scope and quotation are ready for discussion.', ACCEPTED: 'Your custom package has been accepted and is moving to onboarding.', DECLINED: 'The custom package request was not continued.', CLOSED: 'The custom package consultation has been closed.', SUBMITTED: 'Your custom package request is awaiting review.',
   };
   await prisma.notification.create({ data: { dedupeKey: `custom-plan:${request.id}:status:${request.status}:${request.updatedAt.getTime()}`, recipientId: request.requestedBy.id, organizationId: request.organizationId, type: 'GENERAL_UPDATE', priority: ['QUOTED', 'ACCEPTED', 'DECLINED'].includes(request.status) ? 'IMPORTANT' : 'INFO', title: `Custom package: ${request.status.toLowerCase().replace('_', ' ')}`, message: `${request.organization.name}: ${statusCopy[request.status]}`, channels: { create: [{ type: 'IN_APP', address: request.requestedBy.id }, { type: 'EMAIL', address: request.contactEmail || request.requestedBy.email }] } } });
   res.json({ request, message: 'Custom package request updated.' });
@@ -99,7 +99,7 @@ router.patch('/referrals/:id/reward', asyncHandler(async (req: Request, res: Res
     }
     return { credit, applied: subscription?.plan !== 'FREE' };
   });
-  await prisma.notification.create({ data: { dedupeKey: `referral:${referralId}:rewarded`, recipientId: referral.referrerId, type: 'GENERAL_UPDATE', priority: 'IMPORTANT', title: 'Referral reward issued', message: `${referral.rewardMonths}-month CHAMA360 subscription credit ${result.applied ? 'has been applied to your subscription' : 'is available for your next subscription'}.`, status: 'DELIVERED', sentAt: now, channels: { create: [{ type: 'IN_APP', address: referral.referrerId, status: 'DELIVERED', deliveredAt: now }] } } });
+  await prisma.notification.create({ data: { dedupeKey: `referral:${referralId}:rewarded`, recipientId: referral.referrerId, type: 'GENERAL_UPDATE', priority: 'IMPORTANT', title: 'Referral reward issued', message: `${referral.rewardMonths}-month CHAMAZ360 subscription credit ${result.applied ? 'has been applied to your subscription' : 'is available for your next subscription'}.`, status: 'DELIVERED', sentAt: now, channels: { create: [{ type: 'IN_APP', address: referral.referrerId, status: 'DELIVERED', deliveredAt: now }] } } });
   res.json({ referral: { ...referral, rewardAppliedAt: now, status: 'REWARDED' }, credit: result.credit, message: result.applied ? 'Referral subscription credit applied.' : 'Referral subscription credit issued for the next subscription.' });
 }));
 
@@ -264,7 +264,7 @@ router.get('/billing-documents/:id/pdf', asyncHandler(async (req: Request, res: 
 
 router.get('/reconciliation.csv', asyncHandler(async (_req: Request, res: Response) => {
   const report = await billingDocumentService.reconciliationCsv();
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="CHAMA360-billing-reconciliation-${new Date().toISOString().slice(0, 10)}.csv"`); res.send(report);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="CHAMAZ360-billing-reconciliation-${new Date().toISOString().slice(0, 10)}.csv"`); res.send(report);
 }));
 
 router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
@@ -298,7 +298,7 @@ router.post('/:id/manual-payment', asyncHandler(async (req: Request, res: Respon
 router.post('/payments/:id/cancel', asyncHandler(async (req: Request, res: Response) => {
   const request = await prisma.planChangeRequest.findFirst({ where: { id: req.params.id, status: { in: ['PENDING', 'PROCESSING'] } } });
   if (!request) throw new NotFoundError('Open payment request');
-  const updated = await prisma.planChangeRequest.update({ where: { id: request.id }, data: { status: 'CANCELLED', failureReason: 'Cancelled by CHAMA360 support' } });
+  const updated = await prisma.planChangeRequest.update({ where: { id: request.id }, data: { status: 'CANCELLED', failureReason: 'Cancelled by CHAMAZ360 support' } });
   res.json({ request: updated, message: 'Payment request cancelled. No plan was activated.' });
 }));
 

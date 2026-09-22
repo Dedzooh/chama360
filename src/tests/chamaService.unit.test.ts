@@ -14,6 +14,7 @@ import {
   BadRequestError
 } from '../middleware/errorHandler';
 import * as QRCode from 'qrcode';
+import { sendTransactionalEmail } from '../services/notificationDeliveryService';
 
 // Mock dependencies
 jest.mock('../config/database', () => ({
@@ -52,6 +53,12 @@ jest.mock('../config/database', () => ({
 jest.mock('qrcode');
 jest.mock('../services/notificationService');
 jest.mock('../services/backgroundJobService');
+jest.mock('../services/notificationDeliveryService', () => ({
+  sendTransactionalEmail: jest.fn(),
+}));
+jest.mock('../utils/publicWebUrl', () => ({
+  createPublicHashUrl: (path: string) => `https://chamaz360.co.ke/#${path.startsWith('/') ? path : `/${path}`}`,
+}));
 
 describe('ChamaService', () => {
   beforeEach(() => {
@@ -645,21 +652,21 @@ describe('ChamaService', () => {
     const inviterId = 'user_456';
     const emails = ['newmember1@test.com', 'newmember2@test.com'];
 
+    const mockMembership = {
+      chamaId,
+      userId: inviterId,
+      role: MemberRole.CHAIR,
+      status: MemberStatus.ACTIVE,
+    };
+
+    const mockChama = {
+      id: chamaId,
+      name: 'Test Chama',
+      shareableLink: 'invite-token',
+      status: 'ACTIVE',
+    };
+
     it('should send invitations to existing users', async () => {
-      const mockMembership = {
-        chamaId,
-        userId: inviterId,
-        role: MemberRole.CHAIR,
-        status: MemberStatus.ACTIVE,
-      };
-
-      const mockChama = {
-        id: chamaId,
-        name: 'Test Chama',
-        shareableLink: 'link',
-        status: 'ACTIVE',
-      };
-
       const mockUser = {
         id: 'user_789',
         email: emails[0],
@@ -672,7 +679,36 @@ describe('ChamaService', () => {
       const result = await ChamaService.inviteMembers(chamaId, emails, 'Join us!', inviterId);
 
       expect(result).toHaveLength(2);
+      expect(result).toEqual(emails.map((email) => ({ email, status: 'NOTIFIED' })));
       expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
+      expect(sendTransactionalEmail).not.toHaveBeenCalled();
+    });
+
+    it('sends email invitations with the production hash-route URL', async () => {
+      (prisma.chamaMembership.findUnique as jest.Mock).mockResolvedValue(mockMembership);
+      (prisma.chama.findUnique as jest.Mock).mockResolvedValue(mockChama);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (sendTransactionalEmail as jest.Mock).mockResolvedValue(undefined);
+
+      const result = await ChamaService.inviteMembers(chamaId, [emails[0]!], 'Join us!', inviterId);
+
+      expect(result).toEqual([{ email: emails[0], status: 'EMAIL_SENT' }]);
+      expect(sendTransactionalEmail).toHaveBeenCalledWith(
+        emails[0],
+        'Invitation to join Test Chama on CHAMAZ360',
+        expect.stringContaining('https://chamaz360.co.ke/#/join/invite-token'),
+      );
+    });
+
+    it('reports email delivery failure without claiming the invitation was sent', async () => {
+      (prisma.chamaMembership.findUnique as jest.Mock).mockResolvedValue(mockMembership);
+      (prisma.chama.findUnique as jest.Mock).mockResolvedValue(mockChama);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (sendTransactionalEmail as jest.Mock).mockRejectedValue(new Error('SMTP unavailable'));
+
+      const result = await ChamaService.inviteMembers(chamaId, [emails[0]!], 'Join us!', inviterId);
+
+      expect(result).toEqual([{ email: emails[0], status: 'EMAIL_FAILED' }]);
     });
 
     it('should throw error if inviter is not founder or chair', async () => {

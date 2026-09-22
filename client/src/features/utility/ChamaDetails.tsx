@@ -5,6 +5,8 @@ import { Layout } from "../../components/Layout";
 import { chamaService } from "../../services/chamaService";
 import { Chama, ChamaType } from "../../types";
 import { useAuthStore } from "../../store/authStore";
+import { createPublicHashUrl } from "../../config/publicWebUrl";
+import { ROUTES } from "../../config/routes";
 
 const safeText = (value: any, fallback = "â€”") => (value === null || value === undefined || value === "" ? fallback : String(value));
 
@@ -394,7 +396,7 @@ export const ChamaDetails = () => {
             </div>
 
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => navigator.clipboard.writeText(chama.shareableLink || "").then(() => setToast({ type: "success", message: "Invite link copied." })).catch(() => setToast({ type: "error", message: "No invite link available." }))} className="btn btn-outline">
+              <button onClick={() => chama.shareableLink ? navigator.clipboard.writeText(createPublicHashUrl(ROUTES.invitations.join(chama.shareableLink))).then(() => setToast({ type: "success", message: "Invite link copied." })).catch(() => setToast({ type: "error", message: "Could not copy the invite link." })) : setToast({ type: "error", message: "No invite link available." })} className="btn btn-outline">
                 Share
               </button>
               <Link to="/settings" className="btn btn-primary">

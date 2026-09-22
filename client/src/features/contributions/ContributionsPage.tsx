@@ -208,7 +208,7 @@ export const Contributions = () => {
       const result = await mpesaService.initiate({
         contributionId: stkContribution.id,
         phoneNumber: stkPhone.trim(),
-        accountReference: memberPaymentReference || 'CHAMA360',
+        accountReference: memberPaymentReference || 'CHAMAZ360',
         transactionDesc: (paymentSettings?.transactionDesc ?? 'Contribution').slice(0, 13),
       });
       setStkMessage(result.data.customerMessage || 'STK Push sent. Check your phone and enter your M-Pesa PIN.');
@@ -283,7 +283,7 @@ export const Contributions = () => {
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(17);
-      doc.text('CHAMA360 Member Contribution Statement', 14, 13);
+      doc.text('CHAMAZ360 Member Contribution Statement', 14, 13);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.text(currentOrganization.name, 14, 21);

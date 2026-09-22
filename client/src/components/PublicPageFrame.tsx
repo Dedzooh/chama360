@@ -25,7 +25,7 @@ export const PublicPageFrame = ({
     <div className={width === 'narrow' ? 'public-page-container public-page-container-narrow' : 'public-page-container'}>
       <header className="public-page-hero">
         <div className="public-page-brand-row">
-          <Link to={ROUTES.auth.splash} aria-label="CHAMA360 home"><BrandLockup label="CHAMA360" /></Link>
+          <Link to={ROUTES.auth.splash} aria-label="CHAMAZ360 home"><BrandLockup label="CHAMAZ360" /></Link>
           <Link className="public-page-back" to={ROUTES.auth.splash}><ArrowLeft aria-hidden="true" /> Home</Link>
         </div>
         <p className="public-page-eyebrow">{eyebrow}</p>

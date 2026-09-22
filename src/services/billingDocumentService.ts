@@ -66,7 +66,7 @@ export const billingDocumentService = {
     pdf.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     const done = new Promise<Buffer>((resolve) => pdf.on('end', () => resolve(Buffer.concat(chunks))));
     const logo = path.join(process.cwd(), 'client', 'public', 'logo.png'); if (fs.existsSync(logo)) { try { pdf.image(logo, 48, 42, { width: 56 }); } catch { /* Text branding remains available. */ } }
-    pdf.fillColor('#087457').fontSize(22).font('Helvetica-Bold').text('CHAMA360', 118, 48).fontSize(9).fillColor('#71808b').text('TOGETHER · GROW · PROSPER', 118, 75);
+    pdf.fillColor('#087457').fontSize(22).font('Helvetica-Bold').text('CHAMAZ360', 118, 48).fontSize(9).fillColor('#71808b').text('TOGETHER · GROW · PROSPER', 118, 75);
     pdf.fontSize(10).fillColor('#4d5d68').text(config.billing.businessAddress, 360, 48, { width: 185, align: 'right' }); if (config.billing.taxPin) pdf.text(`Tax PIN: ${config.billing.taxPin}`, 360, 63, { width: 185, align: 'right' });
     pdf.moveTo(48, 112).lineTo(547, 112).strokeColor('#d7e5df').stroke(); pdf.moveDown(5);
     pdf.fillColor('#09253e').fontSize(26).font('Helvetica-Bold').text(item.type.replace('_', ' '), 48, 140); pdf.fontSize(11).font('Helvetica').fillColor('#536674').text(item.documentNumber, 48, 174);
@@ -77,7 +77,7 @@ export const billingDocumentService = {
     pdf.moveTo(48, 397).lineTo(547, 397).strokeColor('#d7e5df').stroke(); let y = 420;
     [['Subtotal', Number(item.subtotal)], [`Tax (${Number(item.taxRate)}%)`, Number(item.taxAmount)], ['TOTAL', Number(item.total)]].forEach(([label, value]) => { pdf.font(label === 'TOTAL' ? 'Helvetica-Bold' : 'Helvetica').fillColor(label === 'TOTAL' ? '#087457' : '#536674').text(String(label), 350, y).text(`${item.currency} ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 435, y, { width: 95, align: 'right' }); y += 24; });
     if (item.paymentReference) pdf.roundedRect(48, 520, 499, 58, 7).fill('#eef8f4').fillColor('#087457').font('Helvetica-Bold').text('PAYMENT CONFIRMATION', 62, 535).font('Helvetica').fillColor('#36584d').text(`Reference: ${item.paymentReference}`, 62, 553);
-    pdf.fillColor('#7b8992').fontSize(9).text('Thank you for using CHAMA360. This document was generated electronically and is traceable using its document number.', 48, 735, { width: 499, align: 'center' }); pdf.end();
+    pdf.fillColor('#7b8992').fontSize(9).text('Thank you for using CHAMAZ360. This document was generated electronically and is traceable using its document number.', 48, 735, { width: 499, align: 'center' }); pdf.end();
     return { item, buffer: await done };
   },
 

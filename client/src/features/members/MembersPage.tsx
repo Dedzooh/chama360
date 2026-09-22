@@ -503,7 +503,7 @@ export const Members = () => {
               </Button>
             </div>
           </form>
-          <p className="mt-3 text-sm text-[var(--ds-text-muted)]">For the fastest onboarding, share the invitation link above. Email adds are for existing CHAMA360 accounts and start as Pending approval.</p>
+          <p className="mt-3 text-sm text-[var(--ds-text-muted)]">For the fastest onboarding, share the invitation link above. Email adds are for existing CHAMAZ360 accounts and start as Pending approval.</p>
         </div>
       </section> : null}
       </div>}

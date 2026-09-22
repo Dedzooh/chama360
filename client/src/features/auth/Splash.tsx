@@ -29,7 +29,7 @@ const actions = [
   },
   {
     label: 'Create account',
-    description: 'Join CHAMA360 in minutes',
+    description: 'Join CHAMAZ360 in minutes',
     to: ROUTES.auth.register,
     icon: UserPlus,
   },
@@ -58,7 +58,7 @@ export const Splash = () => {
               <Link to={ROUTES.legal.download}>Get the app</Link>
             </nav>
             <Link to={ROUTES.auth.login} className="splash-nav-signin">Sign in <ArrowRight /></Link>
-            <Link to={ROUTES.legal.download} className="splash-nav-menu" aria-label="Download CHAMA360">
+            <Link to={ROUTES.legal.download} className="splash-nav-menu" aria-label="Download CHAMAZ360">
               <Download aria-hidden="true" />
             </Link>
           </header>
@@ -137,7 +137,7 @@ export const Splash = () => {
         </section>
 
         <footer className="splash-footer">
-          <span>CHAMA360</span>
+          <span>CHAMAZ360</span>
           <span>Save · Grow · Govern · Support</span>
         </footer>
       </div>

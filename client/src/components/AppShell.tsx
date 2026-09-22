@@ -190,7 +190,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
               <IconButton label="Go back" icon={<ArrowLeft className="h-4 w-4" />} onClick={handleBack} />
             ) : null}
 
-            <Link to={ROUTES.app.myChamas} className="app-brand-link" aria-label="CHAMA360 My Chamas">
+            <Link to={ROUTES.app.myChamas} className="app-brand-link" aria-label="CHAMAZ360 My Chamas">
               <BrandLockup className="app-brand-lockup" />
             </Link>
 

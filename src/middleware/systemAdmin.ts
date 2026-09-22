@@ -11,7 +11,7 @@ export const isSelfPlatformOwnerDemotion = (actor: { id: string; email: string; 
 export const requireSystemAdmin = (req: Request, _res: Response, next: NextFunction) => {
   if (!req.user) return next(new UnauthorizedError());
   if (!isPlatformRole(req.user.platformRole) && !isSystemAdminEmail(req.user.email)) {
-    return next(new ForbiddenError('CHAMA360 platform administrator access is required.'));
+    return next(new ForbiddenError('CHAMAZ360 platform administrator access is required.'));
   }
   return next();
 };
@@ -19,7 +19,7 @@ export const requireSystemAdmin = (req: Request, _res: Response, next: NextFunct
 export const requirePlatformOwner = (req: Request, _res: Response, next: NextFunction) => {
   if (!req.user) return next(new UnauthorizedError());
   if (req.user.platformRole !== 'PLATFORM_OWNER' && !isSystemAdminEmail(req.user.email)) {
-    return next(new ForbiddenError('CHAMA360 platform owner access is required.'));
+    return next(new ForbiddenError('CHAMAZ360 platform owner access is required.'));
   }
   return next();
 };

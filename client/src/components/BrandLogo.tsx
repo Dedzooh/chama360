@@ -3,7 +3,7 @@ interface BrandLogoProps {
   label?: string;
 }
 
-const BRAND_LABEL = 'CHAMA360';
+const BRAND_LABEL = 'CHAMAZ360';
 
 export const BrandMark = ({ className = '', label = BRAND_LABEL }: BrandLogoProps) => (
   <span className={`brand-mark ${className}`.trim()} role="img" aria-label={label}>

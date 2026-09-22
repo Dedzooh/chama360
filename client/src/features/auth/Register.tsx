@@ -88,7 +88,7 @@ const Register = () => {
   return (
     <AuthFrame
       eyebrow="Create account"
-      title="Start your CHAMA360 account"
+      title="Start your CHAMAZ360 account"
       subtitle="Set up your profile and start joining or creating Chamas."
       icon={<UserPlus className="h-5 w-5" />}
       footer={

@@ -1,6 +1,6 @@
 import type { ChamaModuleKey, ChamaType } from "../types";
 
-export const PLATFORM_NAME = "CHAMA360";
+export const PLATFORM_NAME = "CHAMAZ360";
 export const PLATFORM_TAGLINE = "Community Chama Management";
 export const PLATFORM_SUBTITLE =
   "One application for chamas, welfare groups, SACCOs, churches, estates, families, youth groups, and community groups.";

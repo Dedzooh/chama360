@@ -89,7 +89,7 @@ const printInfo = () => {
     throw new Error('No LAN IPv4 address found. Set CHAMA_DEV_SERVER_URL manually, for example http://192.168.1.20:5173');
   }
 
-  console.log(`CHAMA360 phone dev URL: ${devServerUrl}`);
+  console.log(`CHAMAZ360 phone dev URL: ${devServerUrl}`);
   if (lan) {
     console.log(`Selected network adapter: ${lan.name}`);
   }
