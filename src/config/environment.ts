@@ -36,7 +36,7 @@ const envSchema = z.object({
   
   // Rate Limiting
   RATE_LIMIT_WINDOW_MS: z.string().transform(val => parseInt(val)).default('900000'),
-  RATE_LIMIT_MAX_REQUESTS: z.string().transform(val => parseInt(val)).default('100'),
+  RATE_LIMIT_MAX_REQUESTS: z.string().transform(val => parseInt(val)).default('300'),
   
   // File Upload
   MAX_FILE_SIZE: z.string().transform(val => parseInt(val)).default('10485760'),
