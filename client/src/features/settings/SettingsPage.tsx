@@ -16,6 +16,11 @@ type OrganizationMetadata = {
     accountReference?: string;
     transactionDesc?: string;
     isEnabled?: boolean;
+    acceptedMethods?: Array<'MPESA' | 'BANK' | 'CASH'>;
+    bankName?: string;
+    bankAccountName?: string;
+    bankAccountNumber?: string;
+    paymentInstructions?: string;
   };
   notificationSettings?: {
     sms?: boolean;
@@ -35,6 +40,11 @@ type SettingsSnapshot = {
     accountReference: string;
     transactionDesc: string;
     isEnabled: boolean;
+    acceptedMethods: Array<'MPESA' | 'BANK' | 'CASH'>;
+    bankName: string;
+    bankAccountName: string;
+    bankAccountNumber: string;
+    paymentInstructions: string;
   };
   notificationForm: { sms: boolean; email: boolean; inApp: boolean };
   welfareForm: WelfareRulesConfig;
@@ -51,6 +61,11 @@ export const Settings = () => {
     accountReference: '',
     transactionDesc: '',
     isEnabled: true,
+    acceptedMethods: ['MPESA', 'BANK', 'CASH'] as Array<'MPESA' | 'BANK' | 'CASH'>,
+    bankName: '',
+    bankAccountName: '',
+    bankAccountNumber: '',
+    paymentInstructions: '',
   });
   const [notificationForm, setNotificationForm] = useState({
     sms: true,
@@ -79,6 +94,11 @@ export const Settings = () => {
       accountReference: metadata.paymentSettings?.accountReference ?? '',
       transactionDesc: metadata.paymentSettings?.transactionDesc ?? '',
       isEnabled: metadata.paymentSettings?.isEnabled ?? true,
+      acceptedMethods: metadata.paymentSettings?.acceptedMethods ?? ['MPESA', 'BANK', 'CASH'],
+      bankName: metadata.paymentSettings?.bankName ?? '',
+      bankAccountName: metadata.paymentSettings?.bankAccountName ?? '',
+      bankAccountNumber: metadata.paymentSettings?.bankAccountNumber ?? '',
+      paymentInstructions: metadata.paymentSettings?.paymentInstructions ?? '',
     });
     setNotificationForm({
       sms: metadata.notificationSettings?.sms ?? true,
@@ -97,6 +117,11 @@ export const Settings = () => {
         accountReference: metadata.paymentSettings?.accountReference ?? '',
         transactionDesc: metadata.paymentSettings?.transactionDesc ?? '',
         isEnabled: metadata.paymentSettings?.isEnabled ?? true,
+        acceptedMethods: metadata.paymentSettings?.acceptedMethods ?? ['MPESA', 'BANK', 'CASH'],
+        bankName: metadata.paymentSettings?.bankName ?? '',
+        bankAccountName: metadata.paymentSettings?.bankAccountName ?? '',
+        bankAccountNumber: metadata.paymentSettings?.bankAccountNumber ?? '',
+        paymentInstructions: metadata.paymentSettings?.paymentInstructions ?? '',
       },
       notificationForm: {
         sms: metadata.notificationSettings?.sms ?? true,
@@ -185,6 +210,11 @@ export const Settings = () => {
             accountNumber: paymentForm.accountNumber.trim() || undefined,
             accountReference: paymentForm.accountReference.trim() || undefined,
             transactionDesc: paymentForm.transactionDesc.trim() || undefined,
+            acceptedMethods: paymentForm.acceptedMethods.length ? paymentForm.acceptedMethods : ['MPESA', 'BANK', 'CASH'],
+            bankName: paymentForm.bankName.trim() || undefined,
+            bankAccountName: paymentForm.bankAccountName.trim() || undefined,
+            bankAccountNumber: paymentForm.bankAccountNumber.trim() || undefined,
+            paymentInstructions: paymentForm.paymentInstructions.trim() || undefined,
           },
           notificationSettings: {
             ...notificationForm,
@@ -404,6 +434,42 @@ export const Settings = () => {
             <TextField label="Account reference" value={paymentForm.accountReference} onChange={(event) => setPaymentForm((current) => ({ ...current, accountReference: event.target.value }))} />
           </div>
           <TextField label="Transaction description" value={paymentForm.transactionDesc} onChange={(event) => setPaymentForm((current) => ({ ...current, transactionDesc: event.target.value }))} />
+          <div>
+            <p className="mb-2 text-sm font-semibold text-[var(--ds-secondary)]">Payment methods members can use</p>
+            <p className="mb-3 text-sm text-[var(--ds-text-muted)]">Only the methods you enable appear to members when they submit a payment. The “I have paid” proof flow accepts exactly these.</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {([['MPESA', 'M-Pesa'], ['BANK', 'Bank transfer'], ['CASH', 'Cash handover']] as const).map(([method, label]) => {
+                const active = paymentForm.acceptedMethods.includes(method);
+                return (
+                  <label key={method} className={`flex cursor-pointer items-center justify-between gap-3 rounded-[var(--ds-radius-lg)] border px-4 py-3 ${active ? 'border-[var(--ds-primary)] bg-emerald-50' : 'border-[var(--ds-border)] bg-[var(--ds-surface-3)]'}`}>
+                    <span className="text-sm font-semibold text-[var(--ds-secondary)]">{label}</span>
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      onChange={(event) => setPaymentForm((current) => ({ ...current, acceptedMethods: event.target.checked ? [...current.acceptedMethods, method] : current.acceptedMethods.filter((item) => item !== method) }))}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          {paymentForm.acceptedMethods.includes('BANK') ? (
+            <div className="grid gap-4 rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface-2)] p-4 sm:grid-cols-3">
+              <TextField label="Bank name" value={paymentForm.bankName} onChange={(event) => setPaymentForm((current) => ({ ...current, bankName: event.target.value }))} placeholder="e.g. Equity Bank" />
+              <TextField label="Account name" value={paymentForm.bankAccountName} onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountName: event.target.value }))} />
+              <TextField label="Account number" value={paymentForm.bankAccountNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountNumber: event.target.value }))} />
+            </div>
+          ) : null}
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Payment instructions for members (optional)</span>
+            <textarea
+              value={paymentForm.paymentInstructions}
+              onChange={(event) => setPaymentForm((current) => ({ ...current, paymentInstructions: event.target.value }))}
+              rows={3}
+              className="input min-h-20 w-full"
+              placeholder="e.g. Pay to the treasurer's M-Pesa number, then submit your proof here — no WhatsApp messages needed."
+            />
+          </label>
           <label className="flex items-center justify-between gap-4 rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] px-4 py-3">
             <div>
               <p className="font-semibold text-[var(--ds-secondary)]">Enable M-Pesa defaults</p>

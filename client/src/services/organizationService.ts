@@ -76,6 +76,50 @@ export interface UpdateMemberInput {
   status?: MemberStatus;
 }
 
+export interface PaymentProofRecord {
+  id: string;
+  contributionId?: string;
+  amount: number;
+  paymentMethod: string;
+  reference?: string | null;
+  paidAt?: string | null;
+  note?: string | null;
+  submittedAt: string;
+  member?: { id: string; firstName?: string; lastName?: string; email?: string; phone?: string } | null;
+}
+
+/**
+ * Parse a pasted M-Pesa confirmation SMS into payment-proof fields.
+ * Mirrors src/utils/mpesaSmsParser.ts on the backend.
+ */
+export function parseMpesaSmsClient(text: string): { receipt: string; amount: number; paidAt?: string } | null {
+  if (!text || text.trim().length < 10) return null;
+  const receiptMatch = text.match(/\b([A-Z0-9]{8,12})\b\s*Confirmed/i) ?? text.match(/\b([A-Z0-9]{10,12})\b/);
+  const amountMatch = text.match(/(?:Ksh|KES|kes)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  if (!receiptMatch || !amountMatch) return null;
+  const amount = Number(amountMatch[1].replace(/,/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  let paidAt: string | undefined;
+  const dateMatch = text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (dateMatch) {
+    const [, day = '1', month = '1', yearRaw = ''] = dateMatch;
+    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw || '1970';
+    let hour = 12;
+    let minute = 0;
+    const timeMatch = text.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
+    if (timeMatch) {
+      hour = Number(timeMatch[1]);
+      minute = Number(timeMatch[2]);
+      const suffix = timeMatch[4]?.toUpperCase();
+      if (suffix === 'PM' && hour < 12) hour += 12;
+      if (suffix === 'AM' && hour === 12) hour = 0;
+    }
+    const date = new Date(Number(year), Number(month) - 1, Number(day), hour, minute);
+    if (!Number.isNaN(date.getTime())) paidAt = date.toISOString();
+  }
+  return { receipt: receiptMatch[1].toUpperCase(), amount, paidAt };
+}
+
 export interface ContributionRecord {
   id: string;
   memberId: string;
@@ -604,6 +648,41 @@ export const organizationService = {
   markContributionPaid: async (organizationId: string, contributionId: string, payload: { paymentMethod: 'CASH' | 'MPESA' | 'BANK'; reference?: string; paidAt?: string }) => {
     const response = await api.post(`/organizations/${organizationId}/contributions/${contributionId}/mark-paid`, payload);
     return response.data.contribution as ContributionRecord;
+  },
+
+  submitPaymentProof: async (organizationId: string, contributionId: string, payload: { paymentMethod: 'MPESA' | 'BANK' | 'CASH'; amount?: number; reference?: string; paidAt?: string; note?: string }) => {
+    const response = await api.post(`/organizations/${organizationId}/contributions/${contributionId}/payment-proof`, payload);
+    return response.data as { message: string };
+  },
+
+  listPaymentProofs: async (organizationId: string) => {
+    const response = await api.get(`/organizations/${organizationId}/contributions/payment-proofs`);
+    return (response.data.proofs ?? []) as PaymentProofRecord[];
+  },
+
+  approvePaymentProof: async (organizationId: string, proofId: string) => {
+    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/${proofId}/approve`, {});
+    return response.data.contribution as ContributionRecord;
+  },
+
+  rejectPaymentProof: async (organizationId: string, proofId: string, reason?: string) => {
+    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/${proofId}/reject`, { reason });
+    return response.data as { message: string };
+  },
+
+  reconcileStatementPreview: async (organizationId: string, statement: string, format: 'auto' | 'mpesa' | 'csv' = 'auto') => {
+    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/reconcile`, { statement, format, mode: 'preview' });
+    return response.data as {
+      rows: number;
+      matched: number;
+      matches: Array<{ proofId: string; confidence: 'EXACT' | 'AMOUNT_DATE' | 'AMOUNT_ONLY'; row: { date?: string; amount: number; reference?: string; details?: string }; rowIndex: number }>;
+      unmatchedRows: Array<{ date?: string; amount: number; reference?: string; details?: string }>;
+    };
+  },
+
+  reconcileStatementApply: async (organizationId: string, statement: string, format: 'auto' | 'mpesa' | 'csv' = 'auto') => {
+    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/reconcile`, { statement, format, mode: 'apply' });
+    return response.data as { rows: number; matched: number; approved: number };
   },
 
   listAuditLogs: async (organizationId: string): Promise<OrganizationAuditLogRecord[]> => {

@@ -3,10 +3,11 @@ import { Banknote, BellRing, CalendarDays, CheckCircle2, ChevronLeft, ChevronRig
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
 import { useCompactLayout } from '../../hooks/useCompactLayout';
 import { useAuthStore } from '../../store/authStore';
-import { organizationService, type ContributionRecord, type ContributionSummary } from '../../services/organizationService';
+import { organizationService, parseMpesaSmsClient, type ContributionRecord, type ContributionSummary } from '../../services/organizationService';
 import { mpesaService } from '../../services/mpesaService';
 import { Badge, Button, Card, Chip, Dialog, EmptyState, MetricCard, SelectField, TextField } from '../../design-system';
 import { ContributionFilters } from './ContributionFilters';
+import { MessageSquareQuote } from 'lucide-react';
 
 const CURRENCY = 'KES';
 const formatMoney = (value: number | string | undefined | null) => `${CURRENCY} ${Number(value ?? 0).toLocaleString()}`;
@@ -25,7 +26,7 @@ export const Contributions = () => {
   const compactLayout = useCompactLayout();
   const { currentOrganization, refreshOrganizations } = useOrganizationWorkspace();
   const user = useAuthStore((state) => state.user);
-  const paymentSettings = (currentOrganization?.metadata as { paymentSettings?: { mode?: string; mpesaNumber?: string; paybillNumber?: string; accountNumber?: string; accountReference?: string; transactionDesc?: string; isEnabled?: boolean } } | undefined)?.paymentSettings;
+  const paymentSettings = (currentOrganization?.metadata as { paymentSettings?: { mode?: string; mpesaNumber?: string; paybillNumber?: string; accountNumber?: string; accountReference?: string; transactionDesc?: string; isEnabled?: boolean; acceptedMethods?: Array<'MPESA' | 'BANK' | 'CASH'>; bankName?: string; bankAccountName?: string; bankAccountNumber?: string; paymentInstructions?: string } } | undefined)?.paymentSettings;
   const organizationSettings = (currentOrganization as { settings?: { contributionRules?: Record<string, any>; notificationRules?: Record<string, any> } } | null)?.settings;
   const settingsContributionRules = organizationSettings?.contributionRules ?? {};
   const contributionRules = Object.keys(settingsContributionRules).length ? settingsContributionRules : (currentOrganization?.metadata as { contributionRules?: Record<string, any> } | undefined)?.contributionRules ?? {};
@@ -52,6 +53,13 @@ export const Contributions = () => {
   const [stkContribution, setStkContribution] = useState<ContributionRecord | null>(null);
   const [stkPhone, setStkPhone] = useState(user?.phone ?? '');
   const [stkMessage, setStkMessage] = useState<string | null>(null);
+  const [proofContribution, setProofContribution] = useState<ContributionRecord | null>(null);
+  const [proofSmsText, setProofSmsText] = useState('');
+  const [proofReference, setProofReference] = useState('');
+  const [proofAmount, setProofAmount] = useState('');
+  const [proofMethod, setProofMethod] = useState<'MPESA' | 'BANK' | 'CASH'>('MPESA');
+  const [proofNote, setProofNote] = useState('');
+  const [proofSuccess, setProofSuccess] = useState<string | null>(null);
   const [calendarPeriod, setCalendarPeriod] = useState(() => new Date().toISOString().slice(0, 7));
   const [exportingStatement, setExportingStatement] = useState(false);
   const memberReferenceSuffix = (user?.phone ?? user?.id ?? 'MEMBER').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
@@ -215,6 +223,61 @@ export const Contributions = () => {
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : 'Could not send the STK Push');
     } finally { setSaving(false); }
+  };
+
+  const acceptedProofMethods = (paymentSettings?.acceptedMethods ?? ['MPESA', 'BANK', 'CASH']) as Array<'MPESA' | 'BANK' | 'CASH'>;
+
+  const openProofModal = (contribution: ContributionRecord) => {
+    setProofContribution(contribution);
+    setProofSmsText('');
+    setProofReference('');
+    setProofAmount(String(Number(contribution.amount) + Number(contribution.penalties ?? 0)));
+    setProofMethod(acceptedProofMethods[0] ?? 'MPESA');
+    setProofNote('');
+    setProofSuccess(null);
+    setError(null);
+  };
+
+  const applyProofSms = (text: string) => {
+    setProofSmsText(text);
+    const parsed = parseMpesaSmsClient(text);
+    if (parsed) {
+      setProofReference(parsed.receipt);
+      setProofAmount(String(parsed.amount));
+      if (parsed.paidAt) setProofNote((note) => note || `Parsed from M-Pesa SMS: paid ${new Date(parsed.paidAt!).toLocaleString('en-KE')}`);
+      setError(null);
+    }
+  };
+
+  const submitProof = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!currentOrganization?.id || !proofContribution) return;
+    const parsedAmount = Number(proofAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setError('Enter the amount you paid.');
+      return;
+    }
+    if (proofMethod !== 'CASH' && !proofReference.trim()) {
+      setError(proofMethod === 'MPESA' ? 'Paste your M-Pesa SMS or enter the receipt code.' : 'Enter the bank transaction reference.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await organizationService.submitPaymentProof(currentOrganization.id, proofContribution.id, {
+        paymentMethod: proofMethod,
+        amount: parsedAmount,
+        reference: proofReference.trim() || undefined,
+        note: proofNote.trim() || undefined,
+      });
+      setProofSuccess(result.message || 'Payment proof submitted for confirmation.');
+      setProofContribution(null);
+      await loadData();
+    } catch (proofError) {
+      setError(proofError instanceof Error ? proofError.message : 'Could not submit payment proof');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!currentOrganization) {
@@ -524,6 +587,7 @@ export const Contributions = () => {
             const canReverse = canRecord && contribution.status !== 'REVERSED';
             const canMarkPaid = canRecord && ['PENDING', 'OVERDUE', 'PARTIAL', 'FAILED'].includes(contribution.status);
             const canSelfPay = !canRecord && paymentSettings?.isEnabled && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
+            const canSubmitProof = !canRecord && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
             return (
               <Card key={contribution.id} className="mobile-finance-card overflow-hidden p-0">
                 <div className="h-1.5 bg-gradient-to-r from-[var(--ds-primary)] via-[var(--ds-secondary)] to-[var(--ds-accent)]" />
@@ -552,7 +616,7 @@ export const Contributions = () => {
                     {contribution.paidAt ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">Paid {contribution.paidAt.slice(0, 10)}</span> : null}
                     {contribution.reference ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">Ref {contribution.reference}</span> : null}
                   </div>
-                  <div className="mt-4 grid gap-2">{canSelfPay ? <Button className="w-full" disabled={saving} onClick={() => openStkPayment(contribution)} startIcon={<Smartphone className="h-4 w-4" />}>Pay with STK Push</Button> : null}{canMarkPaid ? <Button className="w-full" disabled={saving} onClick={() => void handleMarkPaid(contribution)} startIcon={<CheckCircle2 className="h-4 w-4" />}>Mark member paid</Button> : null}{canReverse ? <Button variant="outline" className="w-full" disabled={saving} onClick={() => void handleReverse(contribution)} startIcon={<RotateCcw className="h-4 w-4" />}>Reverse</Button> : null}</div>
+                  <div className="mt-4 grid gap-2">{canSelfPay ? <Button className="w-full" disabled={saving} onClick={() => openStkPayment(contribution)} startIcon={<Smartphone className="h-4 w-4" />}>Pay with STK Push</Button> : null}{canSubmitProof ? <Button variant="outline" className="w-full" disabled={saving} onClick={() => openProofModal(contribution)} startIcon={<MessageSquareQuote className="h-4 w-4" />}>I've paid — submit proof</Button> : null}{canMarkPaid ? <Button className="w-full" disabled={saving} onClick={() => void handleMarkPaid(contribution)} startIcon={<CheckCircle2 className="h-4 w-4" />}>Mark member paid</Button> : null}{canReverse ? <Button variant="outline" className="w-full" disabled={saving} onClick={() => void handleReverse(contribution)} startIcon={<RotateCcw className="h-4 w-4" />}>Reverse</Button> : null}</div>
                 </div>
               </Card>
             );
@@ -594,7 +658,7 @@ export const Contributions = () => {
               {contributionStatus === 'PAID' ? 'Record confirmed payment' : 'Create due contribution'}
             </Button>
             {saveMessage ? <p role="status" className="text-sm font-semibold text-emerald-700">{saveMessage}</p> : null}
-          </form> : <div className="space-y-3 text-sm text-[var(--ds-text-muted)]"><p>Your treasurer confirms contributions after M-Pesa reconciliation.</p>{paymentSettings?.isEnabled ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><strong>{paymentSettings.mode === 'PAYBILL' ? `PayBill ${paymentSettings.paybillNumber ?? ''}` : 'M-Pesa STK Push'}</strong><p className="mt-1">Use your personal account reference: <strong>{memberPaymentReference}</strong></p><p className="mt-1 text-xs">This reference identifies your payment during automatic reconciliation.</p></div> : null}</div>}
+          </form> : <div className="space-y-3 text-sm text-[var(--ds-text-muted)]"><p>{paymentSettings?.paymentInstructions ? paymentSettings.paymentInstructions : 'Your treasurer confirms contributions after reconciliation.'}</p>{acceptedProofMethods.includes('MPESA') && paymentSettings?.isEnabled ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><strong>{paymentSettings.mode === 'PAYBILL' ? `PayBill ${paymentSettings.paybillNumber ?? ''}` : `M-Pesa ${paymentSettings.mpesaNumber ?? "treasurer's number"}`}</strong><p className="mt-1">Use your personal account reference: <strong>{memberPaymentReference}</strong></p><p className="mt-1 text-xs">This reference identifies your payment during automatic reconciliation.</p></div> : null}{acceptedProofMethods.includes('BANK') && paymentSettings?.bankAccountNumber ? <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-900"><strong>{paymentSettings.bankName ?? 'Bank deposit'}</strong><p className="mt-1">Account name: <strong>{paymentSettings.bankAccountName || currentOrganization.name}</strong></p><p className="mt-1">Account number: <strong>{paymentSettings.bankAccountNumber}</strong></p></div> : null}<p>After paying, tap <strong>“I have paid — submit proof”</strong> on your contribution so the treasurer can confirm it in their review queue.</p></div>}
         </div>
       </section>
     </div>
@@ -689,6 +753,7 @@ export const Contributions = () => {
                 const canReverse = canRecord && contribution.status !== 'REVERSED';
                 const canMarkPaid = canRecord && ['PENDING', 'OVERDUE', 'PARTIAL', 'FAILED'].includes(contribution.status);
                 const canSelfPay = !canRecord && paymentSettings?.isEnabled && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
+                const canSubmitProof = !canRecord && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
                 return (
                   <Card key={contribution.id} className="p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -711,6 +776,7 @@ export const Contributions = () => {
                     {canReverse || canMarkPaid || canSelfPay ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {canSelfPay ? <Button disabled={saving} onClick={() => openStkPayment(contribution)} startIcon={<Smartphone className="h-4 w-4" />}>Pay with STK Push</Button> : null}
+                        {canSubmitProof ? <Button variant="outline" disabled={saving} onClick={() => openProofModal(contribution)} startIcon={<MessageSquareQuote className="h-4 w-4" />}>I've paid — submit proof</Button> : null}
                         {canMarkPaid ? <Button disabled={saving} onClick={() => void handleMarkPaid(contribution)} startIcon={<CheckCircle2 className="h-4 w-4" />}>Mark member paid</Button> : null}
                         {canReverse ? (
                         <Button variant="outline" disabled={saving} onClick={() => void handleReverse(contribution)} startIcon={<RotateCcw className="h-4 w-4" />}>
@@ -799,6 +865,36 @@ export const Contributions = () => {
           <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={saving} onClick={() => setStkContribution(null)}>Cancel</Button><Button type="submit" loading={saving} disabled={!stkPhone.trim() || Boolean(stkMessage)} startIcon={!saving ? <Smartphone className="h-4 w-4" /> : undefined}>Send STK Push</Button></div>
         </form>
       </Dialog>
+      <Dialog open={Boolean(proofContribution)} title="I've paid — submit proof" description={proofContribution ? `${proofContribution.period ?? 'Contribution'} · ${formatMoney(Number(proofContribution.amount) + Number(proofContribution.penalties ?? 0))}` : undefined} onClose={() => !saving && setProofContribution(null)}>
+        <form className="space-y-4" onSubmit={submitProof}>
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Paste your M-Pesa confirmation SMS (optional)</span>
+            <textarea
+              value={proofSmsText}
+              onChange={(event) => applyProofSms(event.target.value)}
+              rows={3}
+              className="input min-h-20 w-full"
+              placeholder="e.g. QGH7DE2X8R Confirmed. Ksh1,000.00 sent to JANE WANJIKU on 2/10/2026 at 14:32. New M-PESA balance is Ksh450.00."
+            />
+          </label>
+          {proofSmsText && proofReference ? <div className="rounded-[var(--ds-radius-lg)] border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Detected receipt <strong>{proofReference}</strong> and amount <strong>{formatMoney(proofAmount)}</strong> — check them before submitting.</div> : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField label="Payment method" value={proofMethod} onChange={(event) => setProofMethod(event.target.value as 'MPESA' | 'BANK' | 'CASH')}>
+              {acceptedProofMethods.includes('MPESA') ? <option value="MPESA">M-Pesa{paymentSettings?.mode === 'PAYBILL' ? ' (PayBill)' : paymentSettings?.mpesaNumber ? ` (to ${paymentSettings.mpesaNumber})` : " (to treasurer's number)"}</option> : null}
+              {acceptedProofMethods.includes('BANK') ? <option value="BANK">Bank transfer{paymentSettings?.bankName ? ` — ${paymentSettings.bankName}` : ''}</option> : null}
+              {acceptedProofMethods.includes('CASH') ? <option value="CASH">Cash handover</option> : null}
+            </SelectField>
+            <TextField label="Amount paid (KES)" type="number" min="0.01" step="0.01" value={proofAmount} onChange={(event) => setProofAmount(event.target.value)} required />
+          </div>
+          <TextField label={proofMethod === 'MPESA' ? 'M-Pesa receipt code' : proofMethod === 'BANK' ? 'Bank transaction reference' : 'Receipt reference (optional)'} value={proofReference} onChange={(event) => setProofReference(event.target.value)} required={proofMethod !== 'CASH'} />
+          {proofMethod === 'BANK' && paymentSettings?.bankAccountNumber ? <div className="rounded-[var(--ds-radius-lg)] bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">Deposit to: <strong>{paymentSettings.bankName ? `${paymentSettings.bankName} — ` : ''}{paymentSettings.bankAccountName || currentOrganization.name}</strong> · Account <strong>{paymentSettings.bankAccountNumber}</strong></div> : null}
+          <TextField label="Note for the treasurer (optional)" value={proofNote} onChange={(event) => setProofNote(event.target.value)} />
+          {paymentSettings?.paymentInstructions ? <div className="rounded-[var(--ds-radius-lg)] border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><strong>Treasurer's instructions:</strong> {paymentSettings.paymentInstructions}</div> : null}
+          <div className="rounded-[var(--ds-radius-lg)] bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">No more screenshots on WhatsApp — your proof goes straight to the treasurer's review queue. They will confirm it against the M-Pesa or bank statement.</div>
+          <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={saving} onClick={() => setProofContribution(null)}>Cancel</Button><Button type="submit" loading={saving} startIcon={!saving ? <MessageSquareQuote className="h-4 w-4" /> : undefined}>Submit payment proof</Button></div>
+        </form>
+      </Dialog>
+      {proofSuccess ? <div role="status" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-[var(--ds-radius-lg)] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg">{proofSuccess}</div> : null}
     </div>
   );
 };

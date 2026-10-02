@@ -1,12 +1,16 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
-import { ContributionStatus, PaymentMethod, Prisma, TransactionStatus } from '@prisma/client';
+import { ContributionStatus, NotificationPriority, NotificationType, PaymentMethod, Prisma, TransactionStatus } from '@prisma/client';
 import { authenticate, rateLimitSensitive, requireMfaIfEnabled } from '../../middleware/auth';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { allocatePaidContribution, removeContributionAllocation } from '../../services/contributionAllocationService';
 import { LedgerService } from '../../services/ledgerService';
+import { parseMpesaStatementText, parseStatementCsv } from '../../utils/statementParser';
+import { matchStatementToProofs } from '../../utils/statementMatching';
+import { NotificationService } from '../../services/notificationService';
+import { prisma } from '../../config/database';
 export function registerContributionsRoutes(router: Router, context: any): void {
-  const { db, contributionCreateSchema, markContributionPaidSchema, reverseContributionSchema, getOrganizationAccess, canViewAllFinancials, isFinanceManager, requireOrganizationStatus, runFinancialTransaction } = context;
+  const { db, contributionCreateSchema, markContributionPaidSchema, reverseContributionSchema, paymentProofSubmitSchema, paymentProofDecisionSchema, getOrganizationAccess, canViewAllFinancials, isFinanceManager, requireOrganizationStatus, runFinancialTransaction } = context;
 router.post(
   '/:id/contributions',
   authenticate,
@@ -220,6 +224,329 @@ router.post('/:id/contributions/:contributionId/mark-paid', authenticate, asyncH
     return updated;
   });
   res.json({ contribution, message: 'Member contribution marked as paid.' });
+}));
+
+/**
+ * Member payment-proof flow
+ *
+ * A member who has paid by M-Pesa (to the treasurer's personal number), bank
+ * transfer, or cash submits proof here instead of messaging the treasurer on
+ * WhatsApp. The proof lands in the finance queue as a PENDING transaction with
+ * paymentApproval metadata; the treasurer approves or rejects it, and approval
+ * settles the contribution exactly like a manual mark-paid.
+ */
+
+const notifyFinanceRoles = async (organizationId: string, title: string, message: string) => {
+  const service = new NotificationService(prisma);
+  const financeMembers = await prisma.organizationMember.findMany({
+    where: { organizationId, status: 'ACTIVE', role: { in: ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'] as any } } as any,
+    select: { userId: true },
+  });
+  for (const member of financeMembers) {
+    try {
+      await service.createNotification({
+        recipientId: member.userId,
+        type: NotificationType.GENERAL_UPDATE,
+        priority: NotificationPriority.IMPORTANT,
+        title,
+        message,
+        channels: [{ type: 'IN_APP', address: member.userId }],
+      } as any);
+    } catch (error) {
+      // Notification failures must not break the payment flow
+      console.error('[payment-proof] notification failed', error);
+    }
+  }
+};
+
+const notifyMemberContributionPaid = async (memberId: string) => {
+  const member = await prisma.user.findUnique({ where: { id: memberId }, select: { id: true } });
+  if (!member) return;
+  try {
+    await new NotificationService(prisma).createNotification({
+        recipientId: member.id,
+        type: NotificationType.GENERAL_UPDATE,
+      priority: NotificationPriority.INFO,
+      title: 'Payment confirmed',
+      message: 'Your payment proof was approved and your contribution is now marked as paid.',
+        channels: [{ type: 'IN_APP', address: member.id }],
+    } as any);
+  } catch (error) {
+    console.error('[payment-proof] member notification failed', error);
+  }
+};
+
+const canApprovePayments = (access: any): boolean => {
+  const role = String(access?.role ?? access ?? '').toUpperCase();
+  return ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'].includes(role);
+};
+
+// List pending payment proofs for the finance queue
+router.get('/:id/contributions/payment-proofs', authenticate, asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user?.id) throw new BadRequestError('User not authenticated');
+  const { id } = req.params as { id: string };
+  const access = await getOrganizationAccess(id, req.user.id);
+  if (!canApprovePayments(access)) throw new ForbiddenError('Only finance roles can view payment proofs');
+
+  const proofs = await db.transaction.findMany({
+    where: {
+      organizationId: id,
+      type: 'CONTRIBUTION',
+      status: TransactionStatus.PENDING,
+      metadata: { path: ['paymentProof', 'status'], equals: 'PENDING' },
+    },
+    include: { fromMember: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json({
+    proofs: proofs.map((proof: any) => {
+      const metadata = (proof.metadata as any) ?? {};
+      return {
+        id: proof.id,
+        contributionId: metadata.contributionId,
+        amount: Number(proof.amount),
+        paymentMethod: metadata.paymentMethod ?? 'UNKNOWN',
+        reference: metadata.reference,
+        paidAt: metadata.paidAt,
+        note: metadata.note,
+        submittedAt: proof.createdAt,
+        member: proof.fromMember,
+      };
+    }),
+  });
+}));
+
+// Member submits payment proof
+router.post('/:id/contributions/:contributionId/payment-proof', authenticate, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user?.id) throw new BadRequestError('User not authenticated');
+  const { id, contributionId } = req.params as { id: string; contributionId: string };
+  const access = await getOrganizationAccess(id, req.user.id);
+  if (!access) throw new ForbiddenError('You are not a member of this Chama');
+
+  const payload = paymentProofSubmitSchema.parse(req.body);
+  const contribution = await db.contribution.findUnique({ where: { id: contributionId } });
+  if (!contribution || contribution.organizationId !== id) throw new NotFoundError('Contribution not found');
+  if (contribution.memberId !== req.user.id) throw new ForbiddenError('You can only submit payment proof for your own contributions');
+  if (contribution.status === 'PAID') throw new BadRequestError('This contribution is already marked as paid');
+  if (contribution.status === 'REVERSED') throw new BadRequestError('This contribution was reversed and cannot be paid');
+
+  const existingProof = await db.transaction.findFirst({
+    where: {
+      organizationId: id,
+      fromMemberId: req.user.id,
+      type: 'CONTRIBUTION',
+      status: TransactionStatus.PENDING,
+      metadata: { path: ['paymentProof', 'status'], equals: 'PENDING' },
+    },
+  });
+  if (existingProof) throw new BadRequestError('You already have a payment awaiting confirmation');
+
+  const proof = await db.transaction.create({
+    data: {
+      organizationId: id,
+      chamaId: contribution.chamaId,
+      type: 'CONTRIBUTION',
+      amount: payload.amount ?? contribution.amount,
+      fromMemberId: req.user.id,
+      reference: `PROOF-${contributionId}-${Date.now()}`,
+      idempotencyKey: `proof:${id}:${contributionId}:${req.user.id}:${randomUUID()}`,
+      status: TransactionStatus.PENDING,
+      metadata: {
+        contributionId,
+        paymentMethod: payload.paymentMethod,
+        reference: payload.reference,
+        paidAt: payload.paidAt,
+        note: payload.note,
+        paymentProof: { status: 'PENDING', submittedAt: new Date().toISOString() },
+      },
+    },
+  });
+
+  await notifyFinanceRoles(
+    id,
+    'Payment proof submitted',
+    `${(req.user as any).name ?? 'A member'} submitted payment proof for ${contribution.period ?? 'a contribution'}. Review it in Approvals → Payments.`
+  );
+
+  res.status(201).json({ proof: { id: proof.id, status: proof.status }, message: 'Payment proof submitted. The treasurer will confirm it shortly.' });
+}));
+
+// Treasurer approves a payment proof: settles the contribution like mark-paid
+router.post('/:id/contributions/payment-proofs/:proofId/approve', authenticate, requireMfaIfEnabled, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user?.id) throw new BadRequestError('User not authenticated');
+  const { id, proofId } = req.params as { id: string; proofId: string };
+  const access = await getOrganizationAccess(id, req.user.id);
+  if (!canApprovePayments(access)) throw new ForbiddenError('Only finance roles can approve payment proofs');
+
+  const proof = await db.transaction.findUnique({ where: { id: proofId } });
+  if (!proof || proof.organizationId !== id) throw new NotFoundError('Payment proof not found');
+  const metadata = (proof.metadata as any) ?? {};
+  if (metadata.paymentProof?.status !== 'PENDING') throw new BadRequestError('This payment proof is not pending review');
+  const contributionId = metadata.contributionId as string | undefined;
+  if (!contributionId) throw new BadRequestError('Payment proof is missing a contribution reference');
+
+  const contribution = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.contribution.findUnique({ where: { id: contributionId } });
+    if (!existing || existing.organizationId !== id) throw new NotFoundError('Contribution not found');
+    if (existing.status === 'PAID') throw new BadRequestError('This contribution is already paid');
+    if (existing.status === 'REVERSED') throw new BadRequestError('This contribution was reversed');
+
+    const reference = metadata.reference || proof.reference;
+    const paidAt = metadata.paidAt ? new Date(metadata.paidAt) : new Date();
+    const updated = await tx.contribution.update({
+      where: { id: contributionId },
+      data: { status: ContributionStatus.PAID, paymentMethod: metadata.paymentMethod as PaymentMethod, reference, transactionRef: reference, paidAt, paidDate: paidAt, recordedById: req.user!.id },
+    });
+    await allocatePaidContribution(tx, updated);
+    await LedgerService.recordContributionPayment(tx, {
+      organizationId: id,
+      chamaId: existing.chamaId,
+      fromMemberId: existing.memberId,
+      amount: Number(existing.amount),
+      reference,
+      idempotencyKey: `organization:${id}:contribution:${contributionId}:proof:${proofId}`,
+      status: 'COMPLETED',
+      metadata: { contributionId, paymentMethod: metadata.paymentMethod, approvedProofId: proofId, approvedBy: req.user!.id },
+    });
+    await tx.organizationWallet.update({ where: { organizationId: id }, data: { balance: { increment: existing.amount } } });
+    await tx.transaction.update({ where: { id: proofId }, data: { status: TransactionStatus.COMPLETED, metadata: { ...metadata, paymentProof: { ...metadata.paymentProof, status: 'APPROVED', approvedBy: req.user!.id, approvedAt: new Date().toISOString() } } } });
+    await tx.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'Contribution', entityId: contributionId, oldValues: existing, newValues: updated, metadata: { operation: 'PAYMENT_PROOF_APPROVED', proofId } } });
+    return updated;
+  });
+
+  await notifyMemberContributionPaid(contribution.memberId);
+  res.json({ contribution, message: 'Payment proof approved and contribution marked as paid.' });
+}));
+
+// Treasurer rejects a payment proof
+router.post('/:id/contributions/payment-proofs/:proofId/reject', authenticate, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user?.id) throw new BadRequestError('User not authenticated');
+  const { id, proofId } = req.params as { id: string; proofId: string };
+  const access = await getOrganizationAccess(id, req.user.id);
+  if (!canApprovePayments(access)) throw new ForbiddenError('Only finance roles can reject payment proofs');
+
+  const payload = paymentProofDecisionSchema.parse(req.body);
+  const proof = await db.transaction.findUnique({ where: { id: proofId } });
+  if (!proof || proof.organizationId !== id) throw new NotFoundError('Payment proof not found');
+  const metadata = (proof.metadata as any) ?? {};
+  if (metadata.paymentProof?.status !== 'PENDING') throw new BadRequestError('This payment proof is not pending review');
+
+  await db.transaction.update({
+    where: { id: proofId },
+    data: {
+      status: TransactionStatus.REVERSED,
+      metadata: { ...metadata, paymentProof: { ...metadata.paymentProof, status: 'REJECTED', rejectedBy: req.user!.id, rejectedAt: new Date().toISOString(), reason: payload.reason } },
+    },
+  });
+  await db.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'Transaction', entityId: proofId, metadata: { operation: 'PAYMENT_PROOF_REJECTED', reason: payload.reason } } });
+
+  res.json({ message: 'Payment proof rejected.' });
+}));
+
+// ---- Statement reconciliation -------------------------------------------
+// Treasurer pastes/uploads their M-Pesa or bank statement; the system parses
+// rows, auto-matches pending payment proofs, and (in apply mode) approves the
+// matched proofs through the same settlement path as manual approval.
+
+const approveProofInternal = async (organizationId: string, proofId: string, approverId: string, statementReference?: string) => {
+  const proof = await db.transaction.findUnique({ where: { id: proofId } });
+  if (!proof || proof.organizationId !== organizationId) throw new NotFoundError('Payment proof not found');
+  const metadata = (proof.metadata as any) ?? {};
+  if (metadata.paymentProof?.status !== 'PENDING') throw new BadRequestError('This payment proof is not pending review');
+  const contributionId = metadata.contributionId as string | undefined;
+  if (!contributionId) throw new BadRequestError('Payment proof is missing a contribution reference');
+
+  const contribution = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.contribution.findUnique({ where: { id: contributionId } });
+    if (!existing || existing.organizationId !== organizationId) throw new NotFoundError('Contribution not found');
+    if (['PAID', 'REVERSED'].includes(existing.status)) throw new BadRequestError('This contribution is already settled');
+
+    const reference = statementReference || metadata.reference || proof.reference;
+    const paidAt = metadata.paidAt ? new Date(metadata.paidAt) : new Date();
+    const updated = await tx.contribution.update({
+      where: { id: contributionId },
+      data: { status: ContributionStatus.PAID, paymentMethod: metadata.paymentMethod as PaymentMethod, reference, transactionRef: reference, paidAt, paidDate: paidAt, recordedById: approverId },
+    });
+    await allocatePaidContribution(tx, updated);
+    await LedgerService.recordContributionPayment(tx, {
+      organizationId,
+      chamaId: existing.chamaId,
+      fromMemberId: existing.memberId,
+      amount: Number(existing.amount),
+      reference,
+      idempotencyKey: `organization:${organizationId}:contribution:${contributionId}:proof:${proofId}`,
+      status: 'COMPLETED',
+      metadata: { contributionId, paymentMethod: metadata.paymentMethod, approvedProofId: proofId, approvedBy: approverId, reconciledFromStatement: true },
+    });
+    await tx.organizationWallet.update({ where: { organizationId }, data: { balance: { increment: existing.amount } } });
+    await tx.transaction.update({ where: { id: proofId }, data: { status: TransactionStatus.COMPLETED, metadata: { ...metadata, paymentProof: { ...metadata.paymentProof, status: 'APPROVED', approvedBy: approverId, approvedAt: new Date().toISOString(), statementMatch: statementReference ?? null } } } });
+    await tx.organizationAuditLog.create({ data: { organizationId, userId: approverId, action: 'UPDATE', entityType: 'Contribution', entityId: contributionId, oldValues: existing, newValues: updated, metadata: { operation: 'PAYMENT_PROOF_APPROVED', proofId, reconciledFromStatement: true } } });
+    return updated;
+  });
+
+  await notifyMemberContributionPaid(contribution.memberId);
+};
+
+router.post('/:id/contributions/payment-proofs/reconcile', authenticate, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user?.id) throw new BadRequestError('User not authenticated');
+  const { id } = req.params as { id: string };
+  const access = await getOrganizationAccess(id, req.user.id);
+  if (!canApprovePayments(access)) throw new ForbiddenError('Only finance roles can reconcile statements');
+
+  const { statement, format = 'auto', mode = 'preview' } = (req.body ?? {}) as { statement?: string; format?: 'auto' | 'mpesa' | 'csv'; mode?: 'preview' | 'apply' };
+  if (!statement || typeof statement !== 'string' || statement.trim().length < 10) {
+    throw new BadRequestError('Provide the statement text or CSV content to reconcile');
+  }
+
+  const rows = format === 'csv' ? parseStatementCsv(statement)
+    : format === 'mpesa' ? parseMpesaStatementText(statement)
+    : [...parseMpesaStatementText(statement), ...parseStatementCsv(statement)];
+  if (!rows.length) throw new BadRequestError('Could not find any payment rows in the statement. Check the format and try again.');
+
+  const pendingProofs = await db.transaction.findMany({
+    where: {
+      organizationId: id,
+      type: 'CONTRIBUTION',
+      status: TransactionStatus.PENDING,
+      metadata: { path: ['paymentProof', 'status'], equals: 'PENDING' },
+    },
+    include: { fromMember: { select: { firstName: true, lastName: true } } },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const proofInputs = pendingProofs.map((proof: any) => {
+    const metadata = (proof.metadata as any) ?? {};
+    return {
+      id: proof.id,
+      amount: Number(proof.amount),
+      reference: metadata.reference ?? null,
+      paidAt: metadata.paidAt ?? null,
+      label: `${proof.fromMember?.firstName ?? 'Member'} ${proof.fromMember?.lastName ?? ''}`.trim(),
+    };
+  });
+  const { matches } = matchStatementToProofs(rows, proofInputs);
+  const matchedRowIndexes = new Set(matches.map((match) => match.rowIndex));
+
+  if (mode === 'apply') {
+    let approved = 0;
+    for (const match of matches) {
+      try {
+        await approveProofInternal(id, match.proofId, req.user.id, match.row.reference ?? undefined);
+        approved += 1;
+      } catch (error) {
+        console.error('[reconcile] failed to apply match', match.proofId, error);
+      }
+    }
+    return res.json({ rows: rows.length, matched: matches.length, approved, mode });
+  }
+
+  return res.json({
+    rows: rows.length,
+    matched: matches.length,
+    matches: matches.map((match) => ({ proofId: match.proofId, confidence: match.confidence, row: match.row, rowIndex: match.rowIndex })),
+    unmatchedRows: rows.filter((_, index) => !matchedRowIndexes.has(index)),
+  });
 }));
 
 

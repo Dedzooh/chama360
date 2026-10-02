@@ -15,6 +15,16 @@ export const contributionCreateSchema = z.object({
 export const markContributionPaidSchema = z.object({ paymentMethod: z.enum(['CASH', 'MPESA', 'BANK']), reference: z.string().trim().max(120).optional(), paidAt: z.string().datetime().optional() });
 export const reverseContributionSchema = z.object({ reason: z.string().min(1) });
 
+export const paymentProofSubmitSchema = z.object({
+  contributionId: z.string().cuid(),
+  paymentMethod: z.enum(['MPESA', 'BANK', 'CASH']).default('MPESA'),
+  amount: z.number().positive().optional(),
+  reference: z.string().trim().min(4).max(40).optional(),
+  paidAt: z.string().datetime().optional(),
+  note: z.string().trim().max(500).optional(),
+});
+export const paymentProofDecisionSchema = z.object({ reason: z.string().trim().max(500).optional() });
+
 export const loanApplySchema = z.object({ memberId: z.string().cuid().optional(), amountRequested: z.number().positive(), purpose: z.string().max(500).optional(), interestRate: z.number().min(0).max(100).default(0), repaymentPeriodMonths: z.number().int().min(1).max(60).default(6), guarantors: z.array(z.string().cuid()).default([]) });
 export const guaranteeDecisionSchema = z.object({ guaranteedAmount: z.number().positive().optional() });
 export const loanRepaySchema = z.object({ amount: z.number().positive(), paymentMethod: z.enum(['CASH', 'MPESA', 'BANK']).default('CASH'), reference: z.string().min(1).optional(), idempotencyKey: z.string().trim().min(8).max(120).optional() });

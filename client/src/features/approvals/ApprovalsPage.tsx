@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, CircleX, FileText, HandHeart, Landmark, RefreshCw, ShieldCheck, Users, Wallet } from 'lucide-react';
+import { ArrowLeft, Banknote, CheckCircle2, CircleX, FileText, HandHeart, Landmark, RefreshCw, ShieldCheck, Users, Wallet } from 'lucide-react';
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
-import { organizationService, type WelfareClaimRecord } from '../../services/organizationService';
+import { organizationService, type PaymentProofRecord, type WelfareClaimRecord } from '../../services/organizationService';
 import type { Loan } from '../../types';
 import { ROUTES } from '../../config/routes';
 import { Badge, Button, Card, EmptyState } from '../../design-system';
@@ -10,9 +10,10 @@ import { Badge, Button, Card, EmptyState } from '../../design-system';
 const money = (value: number | string | undefined | null) => `KES ${Number(value ?? 0).toLocaleString()}`;
 const roleCanReview = ['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN'];
 
-type QueueKind = 'loans' | 'welfare' | 'members' | 'expenses' | 'reconciliation';
+type QueueKind = 'payments' | 'loans' | 'welfare' | 'members' | 'expenses' | 'reconciliation';
 
 const queueItems: Array<{ kind: QueueKind; label: string; description: string; icon: typeof Wallet; tone: string }> = [
+  { kind: 'payments', label: 'Payment proofs', description: 'Member "I have paid" submissions to confirm.', icon: Banknote, tone: 'green' },
   { kind: 'loans', label: 'Loan applications', description: 'Credit requests waiting for a decision.', icon: Landmark, tone: 'blue' },
   { kind: 'welfare', label: 'Welfare claims', description: 'Member support requests requiring review.', icon: HandHeart, tone: 'pink' },
   { kind: 'members', label: 'Member requests', description: 'Join and access requests from members.', icon: Users, tone: 'green' },
@@ -32,6 +33,8 @@ export const ApprovalsPage = () => {
   const { currentOrganization } = useOrganizationWorkspace();
   const [loans, setLoans] = useState<Loan[]>([]);
   const [claims, setClaims] = useState<WelfareClaimRecord[]>([]);
+  const [proofs, setProofs] = useState<PaymentProofRecord[]>([]);
+  const [proofNote, setProofNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +50,11 @@ export const ApprovalsPage = () => {
       ]);
       setLoans(loanData);
       setClaims(claimData);
+      try {
+        setProofs(await organizationService.listPaymentProofs(organizationId));
+      } catch {
+        setProofs([]);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load approval queues.');
     } finally {
@@ -87,11 +95,28 @@ export const ApprovalsPage = () => {
     }
   };
 
+  const reviewProof = async (proofId: string, action: 'approve' | 'reject') => {
+    if (!organizationId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      if (action === 'approve') await organizationService.approvePaymentProof(organizationId, proofId);
+      else await organizationService.rejectPaymentProof(organizationId, proofId, proofNote.trim() || undefined);
+      setProofNote('');
+      await loadData();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : 'Could not update this payment proof.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!currentOrganization) {
     return <EmptyState title="No chama selected" description="Open a Chama to review its approval queues." />;
   }
 
   const counts: Record<QueueKind, number> = {
+    payments: proofs.length,
     loans: pendingLoans.length,
     welfare: pendingClaims.length,
     members: pendingMembers.length,
@@ -196,7 +221,7 @@ export const ApprovalsPage = () => {
                 </div>
               </Card>
             ) : (
-              <QueueList kind={kind as QueueKind} loans={pendingLoans} claims={pendingClaims} members={pendingMembers} organizationId={currentOrganization.id} />
+              <QueueList kind={kind as QueueKind} loans={pendingLoans} claims={pendingClaims} members={pendingMembers} proofs={proofs} organizationId={currentOrganization.id} onReviewProof={reviewProof} onReload={loadData} canReview={canReview} saving={saving} proofNote={proofNote} onProofNoteChange={setProofNote} />
             )}
           </div>
         </section>
@@ -207,9 +232,157 @@ export const ApprovalsPage = () => {
 
 const Info = ({ label, value }: { label: string; value: string }) => <div className="rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface-2)] p-4"><p className="text-xs font-semibold text-[var(--ds-text-muted)]">{label}</p><p className="mt-1 font-bold text-[var(--ds-secondary)]">{value}</p></div>;
 
-const QueueList = ({ kind, loans, claims, members, organizationId }: { kind: QueueKind; loans: Loan[]; claims: WelfareClaimRecord[]; members: Array<{ id: string; status: string; user?: { firstName?: string; lastName?: string } | null }>; organizationId: string }) => {
+const QueueList = ({ kind, loans, claims, members, proofs = [], organizationId, onReviewProof, onReload, canReview, saving, proofNote, onProofNoteChange }: { kind: QueueKind; loans: Loan[]; claims: WelfareClaimRecord[]; members: Array<{ id: string; status: string; user?: { firstName?: string; lastName?: string } | null }>; proofs?: PaymentProofRecord[]; organizationId: string; onReviewProof?: (proofId: string, action: 'approve' | 'reject') => void; onReload?: () => void; canReview?: boolean; saving?: boolean; proofNote?: string; onProofNoteChange?: (value: string) => void }) => {
+  if (kind === 'payments') return (
+    <div className="space-y-3">
+      {canReview ? <StatementReconciler organizationId={organizationId} onApplied={() => onReload?.()} /> : null}
+      {proofs.map((proof) => (
+        <div key={proof.id} className="rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="font-bold text-[var(--ds-secondary)]">{proof.member ? `${proof.member.firstName ?? ''} ${proof.member.lastName ?? ''}` : 'Member'}</span>
+            <Badge tone="warning">{money(proof.amount)}</Badge>
+          </div>
+          <p className="mt-1 text-sm text-[var(--ds-text-muted)]">
+            {proof.paymentMethod} · Ref {proof.reference ?? '—'} · Submitted {new Date(proof.submittedAt).toLocaleString('en-KE')}
+          </p>
+          {proof.note ? <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Note: {proof.note}</p> : null}
+          {canReview && onReviewProof ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                value={proofNote}
+                onChange={(event) => onProofNoteChange?.(event.target.value)}
+                placeholder="Rejection reason (optional)"
+                className="input h-9 max-w-xs flex-1 text-sm"
+              />
+              <button type="button" disabled={saving} onClick={() => onReviewProof(proof.id, 'approve')} className="inline-flex items-center gap-1.5 rounded-[var(--ds-radius-lg)] bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">
+                <CheckCircle2 className="h-4 w-4" />Confirm &amp; mark paid
+              </button>
+              <button type="button" disabled={saving} onClick={() => onReviewProof(proof.id, 'reject')} className="inline-flex items-center gap-1.5 rounded-[var(--ds-radius-lg)] border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50">
+                <CircleX className="h-4 w-4" />Reject
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ))}
+      {!proofs.length ? <EmptyState title="No payment proofs waiting" description={'When members submit “I have paid” proof, it appears here for confirmation.'} /> : null}
+    </div>
+  );
   if (kind === 'welfare') return <div className="space-y-3">{claims.map((claim) => <Link key={claim.id} to={ROUTES.chama.approvalItem(organizationId, 'welfare', claim.id)} className="block rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-4 transition hover:border-[var(--ds-primary)]"><div className="flex flex-wrap items-center justify-between gap-3"><span className="font-bold text-[var(--ds-secondary)]">{claim.claimType ?? claim.type}</span><Badge tone="warning">{money(claim.amountRequested)}</Badge></div><p className="mt-1 text-sm text-[var(--ds-text-muted)]">{claim.requestedBy ? `${claim.requestedBy.firstName} ${claim.requestedBy.lastName}` : 'Member'} · {claim.reason ?? claim.description}</p></Link>)}{!claims.length ? <EmptyState title="No welfare claims waiting" description="New pending claims will appear here." /> : null}</div>;
   if (kind === 'loans') return <div className="space-y-3">{loans.map((loan) => <Link key={loan.id} to={ROUTES.chama.loan(organizationId, loan.id)} className="block rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><span className="font-bold text-[var(--ds-secondary)]">{loan.borrower ? `${loan.borrower.firstName} ${loan.borrower.lastName}` : 'Borrower'}</span><Badge tone="warning">{money(loan.amountRequested)}</Badge></div><p className="mt-1 text-sm text-[var(--ds-text-muted)]">{loan.purpose ?? 'Loan application'} · Pending review</p></Link>)}{!loans.length ? <EmptyState title="No loan applications waiting" description="New pending applications will appear here." /> : null}</div>;
   if (kind === 'members') return <div className="space-y-3">{members.map((member) => <Link key={member.id} to={ROUTES.chama.members(organizationId)} className="block rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-4"><p className="font-bold text-[var(--ds-secondary)]">{member.user ? `${member.user.firstName ?? ''} ${member.user.lastName ?? ''}` : 'Member request'}</p><p className="mt-1 text-sm text-[var(--ds-text-muted)]">{member.status.replace('_', ' ')}</p></Link>)}{!members.length ? <EmptyState title="No member requests waiting" description="New join requests will appear here." /> : null}</div>;
   return <EmptyState title={kind === 'expenses' ? 'Expense approval queue' : 'Reconciliation exception queue'} description="This queue is ready for finance workflow integration. Items will appear when the corresponding records are available." />;
+};
+
+const StatementReconciler = ({ organizationId, onApplied }: { organizationId: string; onApplied: () => void }) => {
+  const [statement, setStatement] = useState('');
+  const [format, setFormat] = useState<'auto' | 'mpesa' | 'csv'>('auto');
+  const [preview, setPreview] = useState<Awaited<ReturnType<typeof organizationService.reconcileStatementPreview>> | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  const runPreview = async () => {
+    if (!statement.trim()) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      setPreview(await organizationService.reconcileStatementPreview(organizationId, statement, format));
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : 'Could not read the statement');
+      setPreview(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyMatches = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const outcome = await organizationService.reconcileStatementApply(organizationId, statement, format);
+      setResult(`${outcome.approved} of ${outcome.matched} matched payment${outcome.approved === 1 ? '' : 's'} confirmed automatically.`);
+      setPreview(null);
+      setStatement('');
+      onApplied();
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : 'Could not apply the matches');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confidenceLabel: Record<string, string> = {
+    EXACT: 'Receipt match',
+    AMOUNT_DATE: 'Amount + date',
+    AMOUNT_ONLY: 'Amount only',
+  };
+
+  return (
+    <div className="rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-4">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 text-left">
+        <span>
+          <span className="block font-bold text-[var(--ds-secondary)]">Reconcile from statement</span>
+          <span className="mt-0.5 block text-sm text-[var(--ds-text-muted)]">Paste your M-Pesa or bank statement — matched proofs are confirmed automatically.</span>
+        </span>
+        <Badge tone={open ? 'success' : 'neutral'}>{open ? 'Close' : 'Open'}</Badge>
+      </button>
+      {open ? (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {(['auto', 'mpesa', 'csv'] as const).map((value) => (
+              <button key={value} type="button" onClick={() => setFormat(value)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${format === value ? 'bg-[var(--ds-secondary)] text-white' : 'bg-[var(--ds-surface-3)] text-[var(--ds-text-muted)]'}`}>
+                {value === 'auto' ? 'Auto-detect' : value === 'mpesa' ? 'M-Pesa text' : 'CSV'}
+              </button>
+            ))}
+          </div>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-semibold text-[var(--ds-secondary)]">Statement content</span>
+            <textarea
+              value={statement}
+              onChange={(event) => setStatement(event.target.value)}
+              rows={6}
+              className="input min-h-32 w-full font-mono text-xs"
+              placeholder={'Paste M-Pesa SMS lines or bank statement rows here, e.g.\n2026-09-30 Deposit RCB7QX1P2A KES 1,000.00 JANE WANJIKU\n—or a CSV with Date, Amount, Reference, Details columns'}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" disabled={busy || !statement.trim()} loading={busy} onClick={() => void runPreview()} startIcon={!busy ? <RefreshCw className="h-4 w-4" /> : undefined}>
+              Check statement
+            </Button>
+            {preview && preview.matched > 0 ? (
+              <Button type="button" disabled={busy} onClick={() => void applyMatches()} startIcon={!busy ? <CheckCircle2 className="h-4 w-4" /> : undefined}>
+                Confirm {preview.matched} match{preview.matched === 1 ? '' : 'es'}
+              </Button>
+            ) : null}
+          </div>
+          {preview ? (
+            <div className="space-y-2">
+              <p className="text-sm text-[var(--ds-text-muted)]">{preview.rows} payment row{preview.rows === 1 ? '' : 's'} found · {preview.matched} matched to pending proofs</p>
+              {preview.matches.map((match) => (
+                <div key={match.proofId} className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--ds-radius-lg)] bg-emerald-50 p-3 text-sm">
+                  <span className="font-semibold text-emerald-900">{money(match.row.amount)} · {match.row.reference ?? 'no ref'} {match.row.date ? `· ${match.row.date}` : ''}</span>
+                  <Badge tone="success">{confidenceLabel[match.confidence] ?? match.confidence}</Badge>
+                </div>
+              ))}
+              {preview.unmatchedRows.length ? (
+                <div className="rounded-[var(--ds-radius-lg)] bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-bold">{preview.unmatchedRows.length} statement row{preview.unmatchedRows.length === 1 ? '' : 's'} not matched</p>
+                  <ul className="mt-1 space-y-1 text-xs">
+                    {preview.unmatchedRows.slice(0, 5).map((row, index) => (
+                      <li key={index}>{money(row.amount)} · {row.reference ?? 'no ref'} {row.date ? `· ${row.date}` : ''} {row.details ? `· ${row.details}` : ''}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs">These deposits have no matching member proof — check if a member paid but never submitted.</p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {result ? <div className="rounded-[var(--ds-radius-lg)] border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{result}</div> : null}
+          {error ? <div className="rounded-[var(--ds-radius-lg)] border border-rose-200 bg-rose-50 p-3 text-sm font-medium text-rose-800">{error}</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
 };

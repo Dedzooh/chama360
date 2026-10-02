@@ -4,6 +4,7 @@ import { ROUTES } from '../config/routes';
 
 interface BottomNavProps {
   activeOrganizationId?: string;
+  pendingApprovalsCount?: number;
   onMoreToggle: () => void;
   onQuickAction: () => void;
 }
