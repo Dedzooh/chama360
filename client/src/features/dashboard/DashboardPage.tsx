@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowDownCircle,
   ArrowRight,
@@ -66,6 +66,7 @@ const LoadingStat = () => (
 );
 
 export const Dashboard = () => {
+  const navigate = useNavigate();
   const compactLayout = useCompactLayout();
   const { organizationId } = useParams();
   const { organizations, currentOrganization, loading, error, refreshOrganizations } = useOrganizationWorkspace();
@@ -745,9 +746,9 @@ export const Dashboard = () => {
             <p className="text-sm text-[var(--ds-text-muted)]">Quick actions</p>
             <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Fast access</h2>
             <div className="mt-5 space-y-3">
-              {enabledModules.loans ? <QuickAction label="Open loans" description="Review approvals and balances." icon={<Archive className="h-5 w-5" />} /> : null}
-              <QuickAction label="Meetings" description="Plan the next gathering." icon={<CalendarDays className="h-5 w-5" />} />
-              <QuickAction label="Welfare claims" description="Handle support requests." icon={<Heart className="h-5 w-5" />} />
+              {enabledModules.loans ? <QuickAction label="Open loans" description="Review approvals and balances." icon={<Archive className="h-5 w-5" />} onClick={() => navigate(organization ? ROUTES.chama.loans(organization.id) : ROUTES.app.myChamas)} /> : null}
+              <QuickAction label="Meetings" description="Plan the next gathering." icon={<CalendarDays className="h-5 w-5" />} onClick={() => navigate(organization ? ROUTES.chama.meetings(organization.id) : ROUTES.more.meetings)} />
+              <QuickAction label="Welfare claims" description="Handle support requests." icon={<Heart className="h-5 w-5" />} onClick={() => navigate(organization ? ROUTES.chama.welfare(organization.id) : ROUTES.app.myChamas)} />
             </div>
           </Card>
 

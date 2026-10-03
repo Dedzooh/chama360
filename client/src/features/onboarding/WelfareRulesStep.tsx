@@ -32,7 +32,7 @@ export const WelfareRulesStep = () => {
   };
 
   const addCustomBenefit = () => {
-    const key = `CUSTOM_${Date.now()}`;
+    const key = `CUSTOM_${rules.categories.length + 1}`;
     patchRules({ categories: [...rules.categories, { key, label: 'Custom benefit', enabled: true, limit: rules.maxClaimAmount, documents: [] }] });
   };
 

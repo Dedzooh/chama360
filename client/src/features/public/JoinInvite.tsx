@@ -36,7 +36,6 @@ export const JoinInvite = () => {
     }
 
     void loadInvite();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareableLink, isAuthenticated]);
 
   const loadInvite = async () => {
@@ -144,4 +143,3 @@ export const JoinInvite = () => {
     </main>
   );
 };
-

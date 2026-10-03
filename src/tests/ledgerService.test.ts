@@ -38,7 +38,7 @@ describe('LedgerService', () => {
       where: { idempotencyKey: 'org:org-1:contribution:pay-1' },
       create: expect.objectContaining({
         type: 'CONTRIBUTION',
-        amount: 2500,
+        amount: expect.objectContaining({ d: [2500], e: 3, s: 1 }),
         status: 'COMPLETED',
       }),
     }));

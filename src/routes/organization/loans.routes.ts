@@ -15,7 +15,7 @@ router.post(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, req.user.id as string);
+    await getOrganizationAccess(id, req.user.id);
 
     const currentOrganization = await requireOrganizationStatus(id);
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
@@ -24,14 +24,14 @@ router.post(
 
     const payload = loanApplySchema.parse(req.body);
     const amountRequested = payload.amountRequested;
-    const loanRules = (currentOrganization as any).settings?.loanRules ?? {};
+    const loanRules = (currentOrganization).settings?.loanRules ?? {};
     const requiredGuarantors = getRequiredGuarantorCount(loanRules);
     const maxLoanAmount = getRuleNumber(loanRules.maxLoanAmount, 0);
     if (maxLoanAmount > 0 && amountRequested > maxLoanAmount) {
       throw new BadRequestError(`Loan amount cannot exceed the Chama rule limit of ${maxLoanAmount}`);
     }
 
-    const borrowerId = payload.memberId || (req.user.id as string);
+    const borrowerId = payload.memberId || (req.user.id);
     const guarantorIds = Array.from(new Set(payload.guarantors)).filter((guarantorId) => guarantorId !== borrowerId);
     if (payload.guarantors.includes(borrowerId)) {
       throw new BadRequestError('Borrowers cannot guarantee their own loans');
@@ -40,7 +40,7 @@ router.post(
       throw new BadRequestError(`This Chama requires at least ${requiredGuarantors} guarantor${requiredGuarantors === 1 ? '' : 's'} for this loan amount`);
     }
 
-    const linkedChamaId = (currentOrganization as any).chama?.id;
+    const linkedChamaId = (currentOrganization).chama?.id;
     if (!linkedChamaId) {
       throw new BadRequestError('Organization is not linked to an active Chama');
     }
@@ -101,7 +101,7 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id as string,
+      userId: req.user.id,
       action: 'CREATE',
       entityType: 'Loan',
       entityId: loan.id,
@@ -121,7 +121,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, req.user.id as string);
+    await getOrganizationAccess(id, req.user.id);
 
     const loans = await db.loan.findMany({
       where: { organizationId: id },
@@ -148,7 +148,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, req.user.id as string);
+    await getOrganizationAccess(id, req.user.id);
 
     const [total, pending, approved, active, paid, rejected, outstanding, requestedSum, approvedSum] = await Promise.all([
       db.loan.count({ where: { organizationId: id } }),
@@ -185,7 +185,7 @@ router.get(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    await getOrganizationAccess(id, req.user.id as string);
+    await getOrganizationAccess(id, req.user.id);
 
     const loan = await db.loan.findFirst({
       where: { id: loanId, organizationId: id },
@@ -218,7 +218,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id as string);
+    const access = await getOrganizationAccess(id, req.user.id);
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can approve loans');
     }
@@ -233,7 +233,7 @@ router.patch(
       throw new NotFoundError('Loan not found');
     }
 
-    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization as any).settings?.loanRules);
+    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization).settings?.loanRules);
     await requireAcceptedLoanGuarantees(loanId, requiredGuarantors);
 
     const amountApproved = Number(existing.amountRequested ?? existing.amount ?? 0);
@@ -243,7 +243,7 @@ router.patch(
         status: LoanStatus.APPROVED,
         amountApproved: amountApproved,
         amount: amountApproved,
-        reviewedById: req.user.id as string,
+        reviewedById: req.user.id,
         reviewedAt: new Date(),
       },
       include: {
@@ -257,7 +257,7 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id as string,
+      userId: req.user.id,
       action: 'UPDATE',
       entityType: 'Loan',
       entityId: loanId,
@@ -279,7 +279,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    await getOrganizationAccess(id, req.user.id as string);
+    await getOrganizationAccess(id, req.user.id);
 
     const currentOrganization = await requireOrganizationStatus(id);
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
@@ -353,7 +353,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    await getOrganizationAccess(id, req.user.id as string);
+    await getOrganizationAccess(id, req.user.id);
 
     const existing = await db.loan.findFirst({ where: { id: loanId, organizationId: id }, include: { guarantors: true } });
     if (!existing) {
@@ -411,7 +411,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id as string);
+    const access = await getOrganizationAccess(id, req.user.id);
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can reject loans');
     }
@@ -430,7 +430,7 @@ router.patch(
       where: { id: loanId },
       data: {
         status: LoanStatus.REJECTED,
-        reviewedById: req.user.id as string,
+        reviewedById: req.user.id,
         reviewedAt: new Date(),
       },
       include: {
@@ -444,7 +444,7 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id as string,
+      userId: req.user.id,
       action: 'UPDATE',
       entityType: 'Loan',
       entityId: loanId,
@@ -469,7 +469,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id as string);
+    const access = await getOrganizationAccess(id, req.user.id);
     if (!isFinanceManager(access)) {
       throw new ForbiddenError('Only Treasurer or Admin can mark loans as disbursed');
     }
@@ -488,7 +488,7 @@ router.patch(
       throw new BadRequestError('Only approved loans can be disbursed');
     }
 
-    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization as any).settings?.loanRules);
+    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization).settings?.loanRules);
     await requireAcceptedLoanGuarantees(loanId, requiredGuarantors);
 
     const linkedChamaId = currentOrganization.chama?.id;
@@ -518,7 +518,7 @@ router.post(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id as string);
+    const access = await getOrganizationAccess(id, req.user.id);
     if (!isFinanceManager(access)) {
       throw new ForbiddenError('Only Treasurer or Admin can record repayments');
     }

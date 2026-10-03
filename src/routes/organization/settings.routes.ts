@@ -74,7 +74,7 @@ router.post(
           slug,
           description: payload.description,
           metadata: payload.metadata,
-          createdById: req.user!.id as string,
+          createdById: req.user!.id,
           inviteToken: randomUUID(),
         },
       });
@@ -130,9 +130,9 @@ router.post(
       await tx.organizationSettings.create({
         data: {
           organizationId: created.id,
-          contributionRules: (payload.metadata as any)?.contributionRules ?? {},
-          welfareRules: (payload.metadata as any)?.welfareRules ?? {},
-          loanRules: (payload.metadata as any)?.loanRules ?? {},
+          contributionRules: (payload.metadata)?.contributionRules ?? {},
+          welfareRules: (payload.metadata)?.welfareRules ?? {},
+          loanRules: (payload.metadata)?.loanRules ?? {},
           notificationRules: {},
           securityRules: {},
         },
@@ -173,7 +173,7 @@ router.post(
       throw new NotFoundError('Organization not found after creation');
     }
 
-    auditLog('CREATE', (req.user.id as string), organization.id, {
+    auditLog('CREATE', (req.user.id), organization.id, {
       action: 'ORGANIZATION_CREATED',
       organizationType: organization.organizationType,
       ip: req.ip,
@@ -182,15 +182,15 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: organization.id,
-      userId: (req.user.id as string),
+      userId: (req.user.id),
       action: 'CREATE',
       entityType: 'Organization',
       entityId: organization.id,
       newValues: {
         name: organization.name,
         organizationType: organization.organizationType,
-        chamaType: (organization as any).chamaType,
-        enabledModules: (organization as any).enabledModules,
+        chamaType: (organization).chamaType,
+        enabledModules: (organization).enabledModules,
       },
     });
 
@@ -208,7 +208,7 @@ router.get(
 
     const memberships = await db.organizationMember.findMany({
       where: {
-        userId: (req.user.id as string),
+        userId: (req.user.id),
       },
       include: {
         organization: {
@@ -245,7 +245,7 @@ router.get(
 
 router.get('/:id/invite-link', authenticate, asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const access = await getOrganizationAccess(id, req.user!.id as string);
+  const access = await getOrganizationAccess(id, req.user!.id);
   if (!isOwnerLike(access.role?.name ?? '') && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
     throw new ForbiddenError('Insufficient permissions to invite members');
   }
@@ -259,7 +259,7 @@ router.get('/:id/invite-link', authenticate, asyncHandler(async (req: Request, r
 
 router.post('/:id/invite-link/rotate', authenticate, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const access = await getOrganizationAccess(id, req.user!.id as string);
+  const access = await getOrganizationAccess(id, req.user!.id);
   if (!isOwnerLike(access.role?.name ?? '') && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
     throw new ForbiddenError('Insufficient permissions to invite members');
   }
@@ -268,7 +268,7 @@ router.post('/:id/invite-link/rotate', authenticate, rateLimitSensitive, asyncHa
   }
   const token = randomUUID();
   await db.organization.update({ where: { id }, data: { inviteToken: token } });
-  await writeOrganizationAudit({ organizationId: id, userId: req.user!.id as string, action: 'UPDATE', entityType: 'OrganizationInviteLink', entityId: id, metadata: { rotated: true } });
+  await writeOrganizationAudit({ organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'OrganizationInviteLink', entityId: id, metadata: { rotated: true } });
   res.json({ token });
 }));
 
@@ -281,7 +281,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
 
     const organizationRecord = await db.organization.findUnique({
       where: { id },
@@ -314,9 +314,9 @@ router.patch(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
 
-    if (!hasOrganizationPermission(access, 'EDIT_ORGANIZATION') && !isOwnerLike((access.role as any)?.name || '')) {
+    if (!hasOrganizationPermission(access, 'EDIT_ORGANIZATION') && !isOwnerLike((access.role)?.name || '')) {
       throw new ForbiddenError('Insufficient permissions to update organization');
     }
 
@@ -332,13 +332,13 @@ router.patch(
         slug: payload.slug,
         description: payload.description,
         metadata: payload.metadata,
-        status: payload.status as any,
+        status: payload.status,
       },
     });
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id as string),
+      userId: (req.user.id),
       action: 'UPDATE',
       entityType: 'Organization',
       entityId: id,
@@ -362,7 +362,7 @@ router.post(
     const { id } = req.params as { id: string };
     const organization = await updateOrganizationLifecycle({
       organizationId: id,
-      userId: req.user.id as string,
+      userId: req.user.id,
       targetStatus: 'ACTIVE',
     });
 
@@ -382,7 +382,7 @@ router.post(
     const { id } = req.params as { id: string };
     const organization = await updateOrganizationLifecycle({
       organizationId: id,
-      userId: req.user.id as string,
+      userId: req.user.id,
       targetStatus: 'SUSPENDED',
     });
 
@@ -402,7 +402,7 @@ router.post(
     const { id } = req.params as { id: string };
     const organization = await updateOrganizationLifecycle({
       organizationId: id,
-      userId: req.user.id as string,
+      userId: req.user.id,
       targetStatus: 'CLOSED',
     });
 
@@ -422,7 +422,7 @@ router.post(
     const { id } = req.params as { id: string };
     const organization = await updateOrganizationLifecycle({
       organizationId: id,
-      userId: req.user.id as string,
+      userId: req.user.id,
       targetStatus: 'ARCHIVED',
     });
 
@@ -439,9 +439,9 @@ router.delete(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
 
-    if (!isOwnerLike((access.role as any)?.name || '')) {
+    if (!isOwnerLike((access.role)?.name || '')) {
       throw new ForbiddenError('Only the owner can delete an organization');
     }
 
@@ -449,7 +449,7 @@ router.delete(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id as string),
+      userId: (req.user.id),
       action: 'DELETE',
       entityType: 'Organization',
       entityId: id,

@@ -24,10 +24,9 @@ const RECEIPT = /\b([A-Z0-9]{8,12})\b\s*Confirmed/i;
 const RECEIPT_STANDALONE = /\b([A-Z0-9]{10,12})\b/;
 const AMOUNT = /(?:Ksh|KES|kes)\s*([\d,]+(?:\.\d{1,2})?)/i;
 const DATE_ISO = /(\d{4})-(\d{2})-(\d{2})/;
-const DATE_DMY = /(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/;
+const DATE_DMY = /(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/;
 const TIME = /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i;
 const SENT_FROM = /(?:sent to|paid to)\s+([A-Z][A-Z '.]{2,58}?)(?=\s+on\b|\s*\.|$)|received .*? from\s+([A-Z][A-Z '.]{2,58}?)(?=\s+\d|\s+on\b|\s*\.|$)/i;
-
 function buildIsoDate(date: { year: number; month: number; day: number }, hour: number, minute: number): string | undefined {
   const built = new Date(date.year, date.month - 1, date.day, hour, minute);
   const valid =

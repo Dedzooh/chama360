@@ -239,8 +239,8 @@ export class NotificationService {
     const where = {
       recipientId,
       ...(validatedQuery.chamaId && { chamaId: validatedQuery.chamaId }),
-      ...(validatedQuery.type && { type: validatedQuery.type }),
-      ...(validatedQuery.priority && { priority: validatedQuery.priority }),
+      ...((validatedQuery.type != null) && { type: validatedQuery.type }),
+      ...((validatedQuery.priority != null) && { priority: validatedQuery.priority }),
       ...(validatedQuery.status && { status: validatedQuery.status }),
       ...(validatedQuery.startDate && validatedQuery.endDate && {
         createdAt: {

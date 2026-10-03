@@ -20,7 +20,7 @@ router.post(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
     if (!isFinanceManager(access)) {
       throw new ForbiddenError('Only Treasurer or Admin can record contributions');
     }
@@ -46,8 +46,8 @@ router.post(
       }
     }
     const paidAt = payload.status === 'PAID' ? (payload.paidAt ? new Date(payload.paidAt) : new Date()) : null;
-    const settingsRules = currentOrganization.settings?.contributionRules as any;
-    const savedRules = settingsRules && Object.keys(settingsRules).length ? settingsRules : (currentOrganization.metadata as any)?.contributionRules;
+    const settingsRules = currentOrganization.settings?.contributionRules;
+    const savedRules = settingsRules && Object.keys(settingsRules).length ? settingsRules : (currentOrganization.metadata)?.contributionRules;
     const rawDueDay = Number(savedRules?.deadlineDay ?? savedRules?.dueDate?.slice(8, 10) ?? 10);
     const [periodYear = Number.NaN, periodMonth = Number.NaN] = (payload.period ?? '').split('-').map(Number);
     const dueDay = Number.isInteger(rawDueDay) ? Math.min(Math.max(rawDueDay, 1), 31) : 10;
@@ -58,7 +58,7 @@ router.post(
       const created = await tx.contribution.create({ data: {
         chamaId: linkedChamaId, organizationId: id, memberId: payload.memberId, amount: payload.amount,
         contributionType: payload.contributionType, period: payload.period, paymentMethod: payload.paymentMethod as PaymentMethod,
-        reference: payload.reference, recordedById: req.user!.id as string, status: payload.status as ContributionStatus,
+        reference: payload.reference, recordedById: req.user!.id, status: payload.status as ContributionStatus,
         paidAt, paidDate: paidAt, dueDate,
       } });
       if (payload.status === 'PAID') {
@@ -74,7 +74,7 @@ router.post(
 
     if (payload.status === 'PAID') {
       const priorPaid = await db.contribution.count({ where: { organizationId: id, status: 'PAID', id: { not: contribution?.id } } });
-      if (priorPaid === 0) await db.commercialFunnelEvent.create({ data: { eventType: 'FIRST_CONTRIBUTION', userId: req.user!.id, organizationId: id } });
+      if (priorPaid === 0) await db.commercialFunnelEvent.create({ data: { eventType: 'FIRST_CONTRIBUTION', userId: req.user.id, organizationId: id } });
     }
 
     res.status(201).json({ contribution });
@@ -90,10 +90,10 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
     const contributionWhere = canViewAllFinancials(access)
       ? { organizationId: id }
-      : { organizationId: id, memberId: req.user.id as string };
+      : { organizationId: id, memberId: req.user.id };
 
     const contributions = await db.contribution.findMany({
       where: contributionWhere,
@@ -116,7 +116,7 @@ router.post(
     }
 
     const { id, contributionId } = req.params as { id: string; contributionId: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
     if (!isFinanceManager(access)) {
       throw new ForbiddenError('Only Treasurer or Admin can reverse contributions');
     }
@@ -169,10 +169,10 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
     const contributionWhere = canViewAllFinancials(access)
       ? { organizationId: id }
-      : { organizationId: id, memberId: req.user.id as string };
+      : { organizationId: id, memberId: req.user.id };
 
     const [total, paid, pending, reversed] = await Promise.all([
       db.contribution.count({ where: contributionWhere }),
@@ -181,7 +181,7 @@ router.get(
       db.contribution.count({ where: { ...contributionWhere, status: 'REVERSED' } }),
     ]);
 
-    const credit = await db.contributionCredit.findUnique({ where: { organizationId_memberId: { organizationId: id, memberId: req.user.id as string } } });
+    const credit = await db.contributionCredit.findUnique({ where: { organizationId_memberId: { organizationId: id, memberId: req.user.id } } });
     res.json({ total, paid, pending, reversed, creditBalance: Number(credit?.balance ?? 0) });
   })
 );
@@ -301,7 +301,7 @@ router.get('/:id/contributions/payment-proofs', authenticate, asyncHandler(async
 
   res.json({
     proofs: proofs.map((proof: any) => {
-      const metadata = (proof.metadata as any) ?? {};
+      const metadata = (proof.metadata) ?? {};
       return {
         id: proof.id,
         contributionId: metadata.contributionId,
@@ -381,7 +381,7 @@ router.post('/:id/contributions/payment-proofs/:proofId/approve', authenticate, 
 
   const proof = await db.transaction.findUnique({ where: { id: proofId } });
   if (!proof || proof.organizationId !== id) throw new NotFoundError('Payment proof not found');
-  const metadata = (proof.metadata as any) ?? {};
+  const metadata = (proof.metadata) ?? {};
   if (metadata.paymentProof?.status !== 'PENDING') throw new BadRequestError('This payment proof is not pending review');
   const contributionId = metadata.contributionId as string | undefined;
   if (!contributionId) throw new BadRequestError('Payment proof is missing a contribution reference');
@@ -429,17 +429,17 @@ router.post('/:id/contributions/payment-proofs/:proofId/reject', authenticate, r
   const payload = paymentProofDecisionSchema.parse(req.body);
   const proof = await db.transaction.findUnique({ where: { id: proofId } });
   if (!proof || proof.organizationId !== id) throw new NotFoundError('Payment proof not found');
-  const metadata = (proof.metadata as any) ?? {};
+  const metadata = (proof.metadata) ?? {};
   if (metadata.paymentProof?.status !== 'PENDING') throw new BadRequestError('This payment proof is not pending review');
 
   await db.transaction.update({
     where: { id: proofId },
     data: {
       status: TransactionStatus.REVERSED,
-      metadata: { ...metadata, paymentProof: { ...metadata.paymentProof, status: 'REJECTED', rejectedBy: req.user!.id, rejectedAt: new Date().toISOString(), reason: payload.reason } },
+      metadata: { ...metadata, paymentProof: { ...metadata.paymentProof, status: 'REJECTED', rejectedBy: req.user.id, rejectedAt: new Date().toISOString(), reason: payload.reason } },
     },
   });
-  await db.organizationAuditLog.create({ data: { organizationId: id, userId: req.user!.id, action: 'UPDATE', entityType: 'Transaction', entityId: proofId, metadata: { operation: 'PAYMENT_PROOF_REJECTED', reason: payload.reason } } });
+  await db.organizationAuditLog.create({ data: { organizationId: id, userId: req.user.id, action: 'UPDATE', entityType: 'Transaction', entityId: proofId, metadata: { operation: 'PAYMENT_PROOF_REJECTED', reason: payload.reason } } });
 
   res.json({ message: 'Payment proof rejected.' });
 }));
@@ -452,7 +452,7 @@ router.post('/:id/contributions/payment-proofs/:proofId/reject', authenticate, r
 const approveProofInternal = async (organizationId: string, proofId: string, approverId: string, statementReference?: string) => {
   const proof = await db.transaction.findUnique({ where: { id: proofId } });
   if (!proof || proof.organizationId !== organizationId) throw new NotFoundError('Payment proof not found');
-  const metadata = (proof.metadata as any) ?? {};
+  const metadata = (proof.metadata) ?? {};
   if (metadata.paymentProof?.status !== 'PENDING') throw new BadRequestError('This payment proof is not pending review');
   const contributionId = metadata.contributionId as string | undefined;
   if (!contributionId) throw new BadRequestError('Payment proof is missing a contribution reference');
@@ -516,7 +516,7 @@ router.post('/:id/contributions/payment-proofs/reconcile', authenticate, rateLim
   });
 
   const proofInputs = pendingProofs.map((proof: any) => {
-    const metadata = (proof.metadata as any) ?? {};
+    const metadata = (proof.metadata) ?? {};
     return {
       id: proof.id,
       amount: Number(proof.amount),

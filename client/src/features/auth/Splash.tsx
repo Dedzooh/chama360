@@ -2,43 +2,78 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
+  Banknote,
   BarChart3,
+  CalendarCheck,
   CheckCircle2,
+  Download,
+  HeartHandshake,
+  Landmark,
   LogIn,
-  Plus,
+  PieChart,
   ShieldCheck,
   Smartphone,
   UserPlus,
-  Download,
+  Vote,
 } from 'lucide-react';
 import { ROUTES } from '../../config/routes';
 import { BrandLockup } from '../../components/BrandLogo';
 import { trackCommercialEvent } from '../../utils/commercialFunnel';
 
-const highlights = [
-  { value: '24/7', label: 'Access anywhere', icon: Smartphone },
-  { value: 'Secure', label: 'Protected records', icon: ShieldCheck },
+const features = [
+  {
+    icon: Banknote,
+    title: 'Contributions & payments',
+    description: 'Members confirm their own M-Pesa and bank payments; treasurers reconcile from statements in one click.',
+  },
+  {
+    icon: Landmark,
+    title: 'Loans & guarantees',
+    description: 'Structured loan applications with guarantor approval flows, repayment schedules, and live balances.',
+  },
+  {
+    icon: HeartHandshake,
+    title: 'Welfare funds',
+    description: 'Configurable claim categories, limits, and committee approval for member support requests.',
+  },
+  {
+    icon: CalendarCheck,
+    title: 'Meetings & records',
+    description: 'Schedule meetings, take attendance, and keep minutes attached to the group timeline.',
+  },
+  {
+    icon: Vote,
+    title: 'Transparent voting',
+    description: 'Quorum-aware votes with clear outcomes — every decision documented and auditable.',
+  },
+  {
+    icon: PieChart,
+    title: 'Reports & statements',
+    description: 'Member statements, group summaries, and exports treasurers can hand to auditors.',
+  },
 ];
 
-const actions = [
+const steps = [
   {
-    label: 'Sign in',
-    description: 'Access your chama workspace',
-    to: ROUTES.auth.login,
-    icon: LogIn,
+    step: '01',
+    title: 'Create your chama',
+    description: 'Set contribution rules, enable modules, and invite members by link or QR code.',
   },
   {
-    label: 'Create account',
-    description: 'Join CHAMAZ360 in minutes',
-    to: ROUTES.auth.register,
-    icon: UserPlus,
+    step: '02',
+    title: 'Members pay & confirm',
+    description: 'Payments are submitted with proof, matched against statements, and settled automatically.',
   },
   {
-    label: 'Start a Chama',
-    description: 'Sign in, then create your group',
-    to: ROUTES.auth.login,
-    icon: Plus,
+    step: '03',
+    title: 'Grow with confidence',
+    description: 'Track loans, welfare, and investments with records every member can trust.',
   },
+];
+
+const trustStats = [
+  { value: '24/7', label: 'Access anywhere', icon: Smartphone },
+  { value: '100%', label: 'Auditable records', icon: ShieldCheck },
 ];
 
 export const Splash = () => {
@@ -54,8 +89,8 @@ export const Splash = () => {
             <BrandLockup className="splash-brand-lockup" />
             <nav className="splash-nav" aria-label="Main navigation">
               <a href="#features">Features</a>
+              <a href="#how-it-works">How it works</a>
               <Link to={ROUTES.legal.centre}>Trust &amp; legal</Link>
-              <Link to={ROUTES.legal.download}>Get the app</Link>
             </nav>
             <Link to={ROUTES.auth.login} className="splash-nav-signin">Sign in <ArrowRight /></Link>
             <Link to={ROUTES.legal.download} className="splash-nav-menu" aria-label="Download CHAMAZ360">
@@ -69,9 +104,10 @@ export const Splash = () => {
                 <CheckCircle2 aria-hidden="true" />
                 Built for trusted savings groups
               </div>
-              <h1 id="splash-title">Build wealth.<br /><em>Together.</em></h1>
+              <h1 id="splash-title">Run your chama like a<br /><em>professional institution.</em></h1>
               <p>
-                One trusted platform for contributions, loans, welfare, meetings, and transparent group decisions—built for modern African communities.
+                CHAMAZ360 unifies contributions, loans, welfare, meetings, and voting in one auditable
+                platform — so treasurers stop chasing WhatsApp messages and members finally see the full picture.
               </p>
 
               <div className="splash-cta-row">
@@ -100,7 +136,7 @@ export const Splash = () => {
                 <BarChart3 aria-hidden="true" />
               </div>
               <div className="splash-overview-stats">
-                {highlights.map(({ value, label, icon: Icon }) => (
+                {trustStats.map(({ value, label, icon: Icon }) => (
                   <div className="splash-stat" key={label}>
                     <Icon aria-hidden="true" />
                     <strong>{value}</strong>
@@ -117,27 +153,72 @@ export const Splash = () => {
           </div>
         </section>
 
-        <section id="features" className="splash-actions" aria-label="Quick actions">
-          {actions.map(({ label, description, to, icon: Icon }, index) => (
-            <Link className={`splash-action${index === 0 ? ' splash-action-featured' : ''}`} to={to} key={label}>
-              <span className="splash-action-icon"><Icon aria-hidden="true" /></span>
-              <span className="splash-action-copy">
-                <strong>{label}</strong>
-                <small>{description}</small>
-              </span>
-              <ArrowRight className="splash-action-arrow" aria-hidden="true" />
-            </Link>
-          ))}
+        <section id="features" className="splash-section" aria-label="Features">
+          <div className="splash-section-head">
+            <h2>Everything a chama needs, in one ledger</h2>
+            <p>Purpose-built modules that work together — no spreadsheets, no lost WhatsApp threads.</p>
+          </div>
+          <div className="splash-feature-grid">
+            {features.map(({ icon: Icon, title, description }) => (
+              <article className="splash-feature-card" key={title}>
+                <span className="splash-feature-icon"><Icon aria-hidden="true" /></span>
+                <h3>{title}</h3>
+                <p>{description}</p>
+              </article>
+            ))}
+          </div>
         </section>
 
-        <section className="splash-proof" aria-label="Platform promise">
-          <div><strong>One source of truth</strong><span>Every contribution, decision, and member record in one place.</span></div>
-          <div><strong>Made for real groups</strong><span>Flexible workflows for savings, welfare, loans, and investments.</span></div>
-          <Link to={ROUTES.legal.download}><Download /> Download Android app <ArrowRight /></Link>
+        <section id="how-it-works" className="splash-section" aria-label="How it works">
+          <div className="splash-section-head">
+            <h2>From signup to a fully reconciled month</h2>
+            <p>Three steps — designed for treasurers who are volunteers, not accountants.</p>
+          </div>
+          <div className="splash-steps">
+            {steps.map((item) => (
+              <article className="splash-step" key={item.step}>
+                <span className="splash-step-number">{item.step}</span>
+                <h3>{item.title}</h3>
+                <p>{item.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="splash-actions" aria-label="Quick actions">
+          <Link className="splash-action splash-action-featured" to={ROUTES.auth.login}>
+            <span className="splash-action-icon"><LogIn aria-hidden="true" /></span>
+            <span className="splash-action-copy">
+              <strong>Sign in</strong>
+              <small>Access your chama workspace</small>
+            </span>
+            <ArrowRight className="splash-action-arrow" aria-hidden="true" />
+          </Link>
+          <Link className="splash-action" to={ROUTES.auth.register}>
+            <span className="splash-action-icon"><UserPlus aria-hidden="true" /></span>
+            <span className="splash-action-copy">
+              <strong>Create account</strong>
+              <small>Join CHAMAZ360 in minutes</small>
+            </span>
+            <ArrowRight className="splash-action-arrow" aria-hidden="true" />
+          </Link>
+          <Link className="splash-action" to={ROUTES.legal.download}>
+            <span className="splash-action-icon"><Smartphone aria-hidden="true" /></span>
+            <span className="splash-action-copy">
+              <strong>Get the app</strong>
+              <small>Android — everything, offline-tolerant</small>
+            </span>
+            <ArrowRight className="splash-action-arrow" aria-hidden="true" />
+          </Link>
         </section>
 
         <footer className="splash-footer">
           <span>CHAMAZ360</span>
+          <nav aria-label="Footer">
+            <Link to={ROUTES.legal.centre}>Trust &amp; legal</Link>
+            <Link to={ROUTES.legal.download}>Get the app</Link>
+            <Link to={ROUTES.auth.login}>Sign in</Link>
+          </nav>
           <span>Save · Grow · Govern · Support</span>
         </footer>
       </div>

@@ -25,8 +25,8 @@ export const AuthFrame = ({ eyebrow = 'CHAMAZ360', title, subtitle, footer, icon
             <Badge tone="accent" className="mt-5 border-white/15 bg-white/10 text-white">
               {eyebrow}
             </Badge>
-            <h1 className="mt-5 break-words text-4xl font-black leading-tight sm:text-5xl">{title}</h1>
-            <p className="mt-4 max-w-2xl text-base text-white/84 sm:text-lg">{subtitle}</p>
+            <h1 className="mt-5 break-words text-3xl font-black leading-[1.12] tracking-tight sm:text-4xl">{title}</h1>
+            <p className="mt-3.5 max-w-2xl text-[15px] leading-relaxed text-white/80 sm:text-base">{subtitle}</p>
           </div>
 
           <div className="mt-10 grid gap-3 sm:grid-cols-3">
@@ -35,9 +35,9 @@ export const AuthFrame = ({ eyebrow = 'CHAMAZ360', title, subtitle, footer, icon
               ['Fast', 'Quick mobile sign-in'],
               ['Built for Chamas', 'Finance, welfare, governance'],
             ].map(([label, hint]) => (
-              <div key={label} className="rounded-[var(--ds-radius-lg)] border border-white/12 bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-sm font-bold">{label}</p>
-                <p className="mt-1 text-sm text-white/74">{hint}</p>
+              <div key={label} className="rounded-[var(--ds-radius-lg)] border border-white/10 bg-white/[0.07] p-4 transition hover:bg-white/[0.11]">
+                <p className="text-[13px] font-bold tracking-tight">{label}</p>
+                <p className="mt-1 text-[12px] leading-snug text-white/65">{hint}</p>
               </div>
             ))}
           </div>
@@ -49,8 +49,8 @@ export const AuthFrame = ({ eyebrow = 'CHAMAZ360', title, subtitle, footer, icon
               <div className="flex items-center gap-3">
                 {icon ? <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,var(--ds-primary),var(--ds-secondary))] text-white shadow-[var(--ds-shadow-soft)]">{icon}</div> : null}
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">Account access</p>
-                  <h2 className="truncate text-2xl font-black text-[var(--ds-secondary)]">{title}</h2>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--ds-text-muted)]">Account access</p>
+                  <h2 className="truncate text-xl font-black tracking-tight text-[var(--ds-secondary)]">{title}</h2>
                 </div>
               </div>
             </div>

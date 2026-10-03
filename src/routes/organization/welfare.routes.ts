@@ -16,7 +16,7 @@ router.post(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, (req.user.id as string));
+    await getOrganizationAccess(id, (req.user.id));
 
     const currentOrganization = await requireOrganizationStatus(id);
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
@@ -29,7 +29,7 @@ router.post(
     const claim = await db.welfareClaim.create({
       data: {
         organizationId: id,
-        requestedById: (req.user.id as string),
+        requestedById: (req.user.id),
         memberId: payload.memberId,
         type: payload.claimType as WelfareClaimType,
         claimType: payload.claimType as WelfareClaimType,
@@ -43,7 +43,7 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id as string),
+      userId: (req.user.id),
       action: 'CREATE',
       entityType: 'WelfareClaim',
       entityId: claim.id,
@@ -64,7 +64,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, (req.user.id as string));
+    await getOrganizationAccess(id, (req.user.id));
 
     const claims = await db.welfareClaim.findMany({
       where: { organizationId: id },
@@ -88,7 +88,7 @@ router.patch(
     }
 
     const { id, claimId } = req.params as { id: string; claimId: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can approve welfare claims');
     }
@@ -145,7 +145,7 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id as string),
+      userId: (req.user.id),
       action: 'UPDATE',
       entityType: 'WelfareClaim',
       entityId: claimId,
@@ -177,7 +177,7 @@ router.patch(
       throw new BadRequestError('User not authenticated');
     }
 
-    const actingUserId = req.user.id as string;
+    const actingUserId = req.user.id;
     const { id, claimId } = req.params as { id: string; claimId: string };
     const access = await getOrganizationAccess(id, actingUserId);
     if (!isFinanceManager(access)) {
@@ -298,7 +298,7 @@ router.patch(
     }
 
     const { id, claimId } = req.params as { id: string; claimId: string };
-    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const access = await getOrganizationAccess(id, (req.user.id));
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can reject welfare claims');
     }
@@ -314,14 +314,14 @@ router.patch(
       where: { id: claimId },
       data: {
         status: WelfareClaimStatus.REJECTED,
-        reviewedById: (req.user.id as string),
+        reviewedById: (req.user.id),
         reviewedAt: new Date(),
       },
     });
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id as string),
+      userId: (req.user.id),
       action: 'UPDATE',
       entityType: 'WelfareClaim',
       entityId: claimId,

@@ -100,7 +100,7 @@ export function parseMpesaSmsClient(text: string): { receipt: string; amount: nu
   const amount = Number(amountMatch[1].replace(/,/g, ''));
   if (!Number.isFinite(amount) || amount <= 0) return null;
   let paidAt: string | undefined;
-  const dateMatch = text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  const dateMatch = text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
   if (dateMatch) {
     const [, day = '1', month = '1', yearRaw = ''] = dateMatch;
     const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw || '1970';

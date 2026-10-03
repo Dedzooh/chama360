@@ -126,7 +126,7 @@ export class LedgerService {
     createdAt?: Date | string | null;
     metadata?: Record<string, unknown> | null;
   }) {
-    const metadata = (ledger.metadata ?? {}) as Record<string, unknown>;
+    const metadata = (ledger.metadata ?? {});
     const receiptNumber = metadata.mpesaReceiptNumber ?? metadata.receiptNumber ?? metadata.transactionRef ?? metadata.reference ?? null;
     const paymentMethod = metadata.paymentMethod ?? metadata.source ?? 'MANUAL';
 

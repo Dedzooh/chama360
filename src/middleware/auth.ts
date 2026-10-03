@@ -10,6 +10,7 @@ import { MemberRole } from '@prisma/client';
 import { config } from '../config/environment';
 
 // Extend Express Request interface to include user information
+/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace Express {
     interface Request {

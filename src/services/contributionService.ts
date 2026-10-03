@@ -1083,7 +1083,7 @@ export class ContributionService {
     convertedCurrency: string;
     exchangeRate: number;
   }> {
-    let exchangeRate = data.exchangeRate;
+    const exchangeRate = data.exchangeRate;
 
     // If exchange rate not provided, fetch from external API (placeholder)
     if (!exchangeRate) {

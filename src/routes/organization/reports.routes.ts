@@ -157,7 +157,7 @@ export function registerReportsRoutes(router: Router, context: ReportsRouteConte
       }
 
       const { id } = req.params as { id: string };
-      const access = await getOrganizationAccess(id, req.user.id as string);
+      const access = await getOrganizationAccess(id, req.user.id);
       if (!canViewAllFinancials(access) && !hasOrganizationPermission(access, 'VIEW_AUDIT_LOGS')) {
         throw new ForbiddenError('Only authorized finance and audit roles can view audit logs');
       }

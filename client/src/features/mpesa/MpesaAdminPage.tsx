@@ -189,7 +189,7 @@ export const MpesaAdmin = () => {
     setManualReceipt(payment.mpesaReceiptNumber ?? payment.reference?.replace(/^MPESA-C2B-/, '') ?? '');
     setManualAmount(String(payment.amount ?? ''));
     setManualPhone(payment.phoneNumber ?? '');
-    setManualDate(new Date(payment.createdAt ?? Date.now()).toISOString().slice(0, 16));
+    setManualDate(new Date(payment.createdAt ?? new Date().getTime()).toISOString().slice(0, 16));
     window.setTimeout(() => document.getElementById('mpesa-manual')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
 

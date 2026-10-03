@@ -679,13 +679,13 @@ export class MpesaService {
     const contributionAmount = fullyPaid && totalReceived > Number(contribution.amount) ? totalReceived : Number(contribution.amount);
     try {
       await prisma.$transaction(async (tx) => {
-        const reservation = await tx.transaction.create({ data: { chamaId: matchedOrganization!.chama!.id, organizationId: matchedOrganization!.id, type: 'CONTRIBUTION', amount: data.TransAmount, fromMemberId: matchedMember!.userId, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: 'PENDING', metadata: { contributionId: contribution.id, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL' } } });
-        const updated = await tx.contribution.update({ where: { id: contribution.id }, data: { amount: contributionAmount, status: fullyPaid ? 'PAID' : 'PARTIAL', paymentMethod: 'MPESA', reference: receipt, transactionRef: receipt, paidAt: fullyPaid ? paidAt : null, paidDate: paidAt, recordedById: matchedMember!.userId } });
+        const reservation = await tx.transaction.create({ data: { chamaId: matchedOrganization.chama!.id, organizationId: matchedOrganization.id, type: 'CONTRIBUTION', amount: data.TransAmount, fromMemberId: matchedMember.userId, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: 'PENDING', metadata: { contributionId: contribution.id, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL' } } });
+        const updated = await tx.contribution.update({ where: { id: contribution.id }, data: { amount: contributionAmount, status: fullyPaid ? 'PAID' : 'PARTIAL', paymentMethod: 'MPESA', reference: receipt, transactionRef: receipt, paidAt: fullyPaid ? paidAt : null, paidDate: paidAt, recordedById: matchedMember.userId } });
         await allocatePaidContribution(tx, updated);
-        await tx.organizationWallet.upsert({ where: { organizationId: matchedOrganization!.id }, create: { organizationId: matchedOrganization!.id, balance: data.TransAmount, currency: 'KES' }, update: { balance: { increment: data.TransAmount } } });
+        await tx.organizationWallet.upsert({ where: { organizationId: matchedOrganization.id }, create: { organizationId: matchedOrganization.id, balance: data.TransAmount, currency: 'KES' }, update: { balance: { increment: data.TransAmount } } });
         await tx.transaction.update({ where: { id: reservation.id }, data: { status: 'COMPLETED', metadata: { contributionId: contribution.id, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: false, reconciledAt: paidAt } } });
-        await tx.organizationAuditLog.create({ data: { organizationId: matchedOrganization!.id, userId: matchedMember!.userId, action: 'UPDATE', entityType: 'Contribution', entityId: contribution.id, oldValues: contribution as any, newValues: updated as any, metadata: { operation: 'AUTOMATIC_PAYBILL_RECONCILIATION', receipt, accountReference: data.BillRefNumber } } });
-        await tx.notification.create({ data: { dedupeKey: `paybill-confirmation:${receipt}`, recipientId: matchedMember!.userId, organizationId: matchedOrganization!.id, chamaId: matchedOrganization!.chama!.id, type: 'GENERAL_UPDATE', priority: 'INFO', title: fullyPaid ? 'PayBill contribution received' : 'Partial PayBill contribution received', message: fullyPaid ? `Your M-Pesa payment of KES ${Number(data.TransAmount).toLocaleString()} was received and allocated. Receipt: ${receipt}.` : `KES ${Number(data.TransAmount).toLocaleString()} was received. Your contribution remains partially paid. Receipt: ${receipt}.`, status: 'DELIVERED', sentAt: paidAt, channels: { create: [{ type: 'IN_APP', address: matchedMember!.userId, status: 'DELIVERED', deliveredAt: paidAt }] } } });
+        await tx.organizationAuditLog.create({ data: { organizationId: matchedOrganization.id, userId: matchedMember.userId, action: 'UPDATE', entityType: 'Contribution', entityId: contribution.id, oldValues: contribution as any, newValues: updated as any, metadata: { operation: 'AUTOMATIC_PAYBILL_RECONCILIATION', receipt, accountReference: data.BillRefNumber } } });
+        await tx.notification.create({ data: { dedupeKey: `paybill-confirmation:${receipt}`, recipientId: matchedMember.userId, organizationId: matchedOrganization.id, chamaId: matchedOrganization.chama!.id, type: 'GENERAL_UPDATE', priority: 'INFO', title: fullyPaid ? 'PayBill contribution received' : 'Partial PayBill contribution received', message: fullyPaid ? `Your M-Pesa payment of KES ${Number(data.TransAmount).toLocaleString()} was received and allocated. Receipt: ${receipt}.` : `KES ${Number(data.TransAmount).toLocaleString()} was received. Your contribution remains partially paid. Receipt: ${receipt}.`, status: 'DELIVERED', sentAt: paidAt, channels: { create: [{ type: 'IN_APP', address: matchedMember.userId, status: 'DELIVERED', deliveredAt: paidAt }] } } });
       });
     } catch (error: any) {
       if (error?.code === 'P2002') return { matched: true, duplicate: true, message: 'Already processed' };
@@ -823,7 +823,7 @@ export class MpesaService {
         take: 100, // Process in batches
       });
 
-      let successful = 0;
+      const successful = 0;
       let failed = 0;
 
       for (const transaction of pendingTransactions) {

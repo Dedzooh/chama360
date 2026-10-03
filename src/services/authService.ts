@@ -109,7 +109,7 @@ export class AuthService {
       issuer: 'chama-management-system',
       audience: 'chama-users',
     };
-    return jwt.sign(payload, config.jwt.secret as string, options);
+    return jwt.sign(payload, config.jwt.secret, options);
   }
 
   /**
@@ -121,7 +121,7 @@ export class AuthService {
       issuer: 'chama-management-system',
       audience: 'chama-users',
     };
-    return jwt.sign(payload, config.jwt.refreshSecret as string, options);
+    return jwt.sign(payload, config.jwt.refreshSecret, options);
   }
   /**
    * Generate both access and refresh tokens without creating a session
@@ -528,7 +528,7 @@ export class AuthService {
     try {
       // Decode token to get expiration
       const decoded = jwt.decode(token) as JwtPayload;
-      if (decoded && decoded.exp) {
+      if (decoded?.exp) {
         const ttl = decoded.exp - Math.floor(Date.now() / 1000);
         if (ttl > 0) {
           await RedisService.set(`${this.BLACKLIST_PREFIX}${this.fingerprintToken(token)}`, 'true', ttl);

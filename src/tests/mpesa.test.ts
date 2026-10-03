@@ -16,6 +16,7 @@ jest.mock('../config/database', () => ({
     transaction: {
       create: jest.fn(),
       upsert: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -37,12 +38,9 @@ jest.mock('../config/logger', () => ({
 }));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
-const mockAxiosInstance = {
-  post: jest.fn(),
-} as any;
+const mockAxiosInstance = { post: jest.fn() } as any;
 
 describe('MpesaService', () => {
-  let mpesaService: MpesaService;
 
   beforeEach(() => {
     jest.clearAllMocks();
