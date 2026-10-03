@@ -51,7 +51,6 @@ router.post('/initiate',
     if (!contribution) {
       throw new NotFoundError('Contribution not found');
     }
-
     if (!['PENDING', 'PARTIAL', 'OVERDUE'].includes(contribution.status)) {
       throw new BadRequestError('Only an outstanding contribution can be paid by STK Push');
     }
@@ -80,13 +79,20 @@ router.post('/initiate',
       throw new BadRequestError('Insufficient permissions to initiate payment');
     }
 
-    // Initiate M-Pesa payment
+    const priorPayments = await prisma.transaction.aggregate({
+      where: { organizationId: contribution.organizationId ?? undefined, chamaId: contribution.chamaId, fromMemberId: contribution.memberId, type: 'CONTRIBUTION', status: 'COMPLETED', metadata: { path: ['contributionId'], equals: contribution.id } },
+      _sum: { amount: true },
+    });
+    const amount = Math.max(0, Number(contribution.amount) + Number(contribution.penalties ?? 0) - Number(priorPayments._sum.amount ?? 0));
+    if (amount <= 0) throw new BadRequestError('This contribution has no remaining balance. Refresh the page to see the latest status.');
+
+    // Initiate M-Pesa payment for the remaining balance, including assessed penalties.
     const result = await mpesaService.initiatePayment({
       contributionId: paymentData.contributionId,
       memberId: contribution.memberId,
       chamaId: contribution.chamaId,
       organizationId: contribution.organizationId,
-      amount: Number(contribution.amount),
+      amount,
       phoneNumber: paymentData.phoneNumber,
       accountReference: paymentData.accountReference,
       transactionDesc: paymentData.transactionDesc,
@@ -96,7 +102,7 @@ router.post('/initiate',
     auditLog('CREATE', contribution.chamaId, req.user.id, {
       action: 'MPESA_PAYMENT_INITIATED',
       contributionId: paymentData.contributionId,
-      amount: contribution.amount,
+      amount,
       phoneNumber: paymentData.phoneNumber,
       merchantRequestId: result.merchantRequestId,
       checkoutRequestId: result.checkoutRequestId,
@@ -197,7 +203,8 @@ router.post('/reconcile/manual',
       throw new BadRequestError('User not authenticated');
     }
 
-    const reconciliationData = manualReconciliationSchema.parse(req.body);
+    const reconciliationData = manualReconciliationSchema.parse({ ...req.body, phoneNumber: req.body?.phoneNumber ?? '254700000000' });
+    const requestedTransactionId = typeof req.body?.transactionId === 'string' ? req.body.transactionId : undefined;
 
     // Get contribution details
     const contribution = await prisma.contribution.findUnique({
@@ -210,37 +217,53 @@ router.post('/reconcile/manual',
     if (!contribution) {
       throw new NotFoundError('Contribution not found');
     }
+    if (requestedTransactionId && contribution.organizationId !== res.locals.organizationId) throw new BadRequestError('Payment and contribution must belong to the selected Chama.');
 
     const [organizationMembership, legacyMembership] = await Promise.all([
       contribution.organizationId ? prisma.organizationMember.findUnique({ where: { organizationId_userId: { organizationId: contribution.organizationId, userId: req.user.id } }, include: { role: { select: { name: true } } } }) : null,
       prisma.chamaMembership.findUnique({ where: { chamaId_userId: { chamaId: contribution.chamaId, userId: req.user.id } } }),
     ]);
-    const financeRoles = ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'];
+    const financeRoles = ['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN'];
     const organizationRole = organizationMembership?.role?.name ?? '';
     if (!financeRoles.includes(organizationRole) && !['FOUNDER', 'TREASURER'].includes(legacyMembership?.role ?? '')) throw new ForbiddenError('Only Treasurer or Admin can reconcile payments');
+    if (requestedTransactionId && contribution.organizationId && !financeRoles.includes(organizationRole)) throw new ForbiddenError('Only an organization Treasurer or Admin can reconcile this queue item');
     if (contribution.status === 'PAID' || contribution.status === 'REVERSED') throw new BadRequestError('Select an outstanding contribution');
 
     const receipt = reconciliationData.mpesaReceiptNumber.toUpperCase();
-    const receiptTransaction = await prisma.transaction.findFirst({ where: { OR: [{ reference: { in: [`MPESA-${receipt}`, `MPESA-C2B-${receipt}`] } }, { metadata: { path: ['mpesaReceiptNumber'], equals: receipt } }] }, orderBy: { createdAt: 'asc' } });
+    const queuedTransaction = requestedTransactionId ? await prisma.transaction.findFirst({ where: { id: requestedTransactionId, organizationId: contribution.organizationId, type: 'CONTRIBUTION', status: 'RECONCILIATION_REQUIRED', metadata: { path: ['reconciliationRequired'], equals: true } } }) : null;
+    if (requestedTransactionId && !queuedTransaction) throw new BadRequestError('This payment is no longer waiting for reconciliation. Refresh the queue.');
+    if (queuedTransaction && Number(queuedTransaction.amount) !== Number(reconciliationData.amount)) throw new BadRequestError('Amount does not match the original M-Pesa payment.');
+    if (queuedTransaction && queuedTransaction.metadata && (queuedTransaction.metadata as any).mpesaReceiptNumber && (queuedTransaction.metadata as any).mpesaReceiptNumber !== receipt) throw new BadRequestError('Receipt number does not match the original M-Pesa record.');
+    const receiptTransaction = queuedTransaction ?? await prisma.transaction.findFirst({ where: { OR: [{ reference: { in: [`MPESA-${receipt}`, `MPESA-C2B-${receipt}`] } }, { metadata: { path: ['mpesaReceiptNumber'], equals: receipt } }], ...(contribution.organizationId ? { organizationId: contribution.organizationId } : { chamaId: contribution.chamaId }) }, orderBy: { createdAt: 'asc' } });
+    if (receiptTransaction && receiptTransaction.fromMemberId && receiptTransaction.fromMemberId !== contribution.memberId) throw new BadRequestError('This receipt is already associated with a different member.');
+    if (receiptTransaction && receiptTransaction.chamaId !== contribution.chamaId) throw new BadRequestError('Receipt belongs to a different Chama.');
     if (receiptTransaction?.status === TransactionStatus.COMPLETED) throw new BadRequestError('Payment already reconciled');
     if (receiptTransaction?.organizationId && contribution.organizationId && receiptTransaction.organizationId !== contribution.organizationId) throw new BadRequestError('Receipt belongs to a different Chama');
 
-    const priorPayments = await prisma.transaction.aggregate({ where: { type: 'CONTRIBUTION', fromMemberId: contribution.memberId, status: 'COMPLETED', metadata: { path: ['contributionId'], equals: contribution.id } }, _sum: { amount: true } });
+    const priorPayments = await prisma.transaction.aggregate({ where: { type: 'CONTRIBUTION', fromMemberId: contribution.memberId, status: 'COMPLETED', metadata: { path: ['contributionId'], equals: contribution.id }, ...(queuedTransaction ? { id: { not: queuedTransaction.id } } : {}) }, _sum: { amount: true } });
     const totalReceived = Number(priorPayments._sum.amount ?? 0) + Number(reconciliationData.amount);
+    if (totalReceived > Number(contribution.amount) + Number(contribution.penalties ?? 0) + 0.001) throw new BadRequestError('This payment would exceed the remaining contribution balance. Review the payment amount before matching.');
     const amountRequired = Number(contribution.amount) + Number(contribution.penalties ?? 0);
     const fullyPaid = totalReceived >= amountRequired;
-    const contributionAmount = fullyPaid && totalReceived > Number(contribution.amount) ? totalReceived : Number(contribution.amount);
+    const contributionAmount = Number(contribution.amount);
     const paidDate = new Date(reconciliationData.transactionDate);
     const transaction = await prisma.$transaction(async (tx) => {
-      const transactionMetadata = { ...((receiptTransaction?.metadata ?? {}) as any), contributionId: contribution.id, mpesaReceiptNumber: receipt, phoneNumber: reconciliationData.phoneNumber, transactionDate: reconciliationData.transactionDate, paymentMethod: 'MPESA', manualReconciliation: true, reconciliationRequired: false, reconciledBy: req.user!.id, reconciledAt: new Date() };
-      const reconciledTransaction = receiptTransaction
-        ? await tx.transaction.update({ where: { id: receiptTransaction.id }, data: { organizationId: contribution.organizationId, fromMemberId: contribution.memberId, status: 'COMPLETED', metadata: transactionMetadata } })
+      const transactionMetadata = { ...((queuedTransaction?.metadata ?? receiptTransaction?.metadata ?? {}) as any), contributionId: contribution.id, mpesaReceiptNumber: receipt, phoneNumber: reconciliationData.phoneNumber ?? (queuedTransaction?.metadata as any)?.phoneNumber, transactionDate: reconciliationData.transactionDate, paymentMethod: 'MPESA', manualReconciliation: true, reconciliationRequired: false, reconciliationOutcome: 'MATCHED', reconciliationReason: null, reconciliationReasons: [], reconciledBy: req.user!.id, reconciledAt: new Date() };
+      if (queuedTransaction) {
+        const claimed = await tx.transaction.updateMany({ where: { id: queuedTransaction.id, status: 'RECONCILIATION_REQUIRED', metadata: { path: ['reconciliationRequired'], equals: true } }, data: { status: 'PENDING' } });
+        if (claimed.count !== 1) throw new BadRequestError('This payment was already claimed by another treasurer. Refresh the queue.');
+      }
+      const reconciledTransaction = queuedTransaction
+        ? await tx.transaction.update({ where: { id: queuedTransaction.id }, data: { organizationId: contribution.organizationId, fromMemberId: contribution.memberId, reference: `MPESA-${receipt}`, amount: reconciliationData.amount, status: 'COMPLETED', metadata: transactionMetadata } })
+        : receiptTransaction
+        ? await tx.transaction.update({ where: { id: receiptTransaction.id }, data: { organizationId: contribution.organizationId, fromMemberId: contribution.memberId, amount: reconciliationData.amount, status: 'COMPLETED', metadata: transactionMetadata } })
         : await tx.transaction.create({ data: { chamaId: contribution.chamaId, organizationId: contribution.organizationId, type: 'CONTRIBUTION', amount: reconciliationData.amount, fromMemberId: contribution.memberId, reference: `MPESA-${receipt}`, idempotencyKey: `MPESA:MANUAL:${receipt}`, status: 'COMPLETED', metadata: transactionMetadata } });
       const updated = await tx.contribution.update({ where: { id: contribution.id }, data: { amount: contributionAmount, status: fullyPaid ? 'PAID' : 'PARTIAL', paidDate, paidAt: fullyPaid ? paidDate : null, paymentMethod: 'MPESA', reference: receipt, transactionRef: receipt, recordedById: req.user!.id } });
       if (contribution.organizationId) {
         await allocatePaidContribution(tx, updated);
         await tx.organizationWallet.upsert({ where: { organizationId: contribution.organizationId }, create: { organizationId: contribution.organizationId, balance: reconciliationData.amount, currency: contribution.chama.currency }, update: { balance: { increment: reconciliationData.amount } } });
         await tx.organizationAuditLog.create({ data: { organizationId: contribution.organizationId, userId: req.user!.id, action: 'UPDATE', entityType: 'Contribution', entityId: contribution.id, oldValues: contribution as any, newValues: updated as any, metadata: { operation: 'MPESA_MANUAL_RECONCILIATION', receipt, transactionId: reconciledTransaction.id } } });
+        if (queuedTransaction) await tx.organizationAuditLog.create({ data: { organizationId: contribution.organizationId, userId: req.user!.id, action: 'UPDATE', entityType: 'Transaction', entityId: reconciledTransaction.id, oldValues: queuedTransaction as any, newValues: reconciledTransaction as any, metadata: { operation: 'MPESA_EXCEPTION_RESOLVED', outcome: 'MATCHED', receipt, contributionId: contribution.id } } });
       }
       await tx.notification.upsert({ where: { dedupeKey: `manual-reconciliation:${receipt}` }, update: {}, create: { dedupeKey: `manual-reconciliation:${receipt}`, recipientId: contribution.memberId, organizationId: contribution.organizationId, chamaId: contribution.chamaId, type: 'GENERAL_UPDATE', priority: 'INFO', title: fullyPaid ? 'M-Pesa payment reconciled' : 'Partial M-Pesa payment reconciled', message: `Your payment of KES ${Number(reconciliationData.amount).toLocaleString()} was matched to your contribution. Receipt: ${receipt}.`, status: 'DELIVERED', sentAt: new Date(), channels: { create: [{ type: 'IN_APP', address: contribution.memberId, status: 'DELIVERED', deliveredAt: new Date() }] } } });
       return reconciledTransaction;
@@ -454,6 +477,9 @@ router.post('/retry/:contributionId',
 
     // Use provided phone number or member's phone
     const phoneNumber = retryData.phoneNumber || contribution.member.phone;
+    const priorPayments = await prisma.transaction.aggregate({ where: { chamaId: contribution.chamaId, fromMemberId: contribution.memberId, type: 'CONTRIBUTION', status: 'COMPLETED', metadata: { path: ['contributionId'], equals: contribution.id } }, _sum: { amount: true } });
+    const remainingAmount = Math.max(0, Number(contribution.amount) + Number(contribution.penalties ?? 0) - Number(priorPayments._sum.amount ?? 0));
+    if (remainingAmount <= 0) throw new BadRequestError('This contribution has no remaining balance.');
 
     // Initiate M-Pesa payment
     const result = await mpesaService.initiatePayment({
@@ -461,7 +487,7 @@ router.post('/retry/:contributionId',
       memberId: contribution.memberId,
       chamaId: contribution.chamaId,
       organizationId: contribution.organizationId,
-      amount: Number(contribution.amount),
+      amount: remainingAmount,
       phoneNumber: phoneNumber,
       accountReference: `RETRY-${contribution.id.substring(0, 8)}`,
       transactionDesc: 'Retry Payment',

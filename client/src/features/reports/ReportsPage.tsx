@@ -11,6 +11,7 @@ import { Badge, Button, Card, Chip, EmptyState, MetricCard, SparklineChart, Char
 const money = (value: number | string | null | undefined) => `KES ${Number(value ?? 0).toLocaleString()}`;
 const dateText = (value: string | Date | null | undefined) => value ? new Date(value).toLocaleDateString('en-KE') : '—';
 const safeName = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const formatStatusLabel = (status: string) => status.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export const Reports = () => {
   const compactLayout = useCompactLayout();
@@ -465,10 +466,10 @@ export const Reports = () => {
               ['Welfare', welfareFilter, setWelfareFilter, claims],
               ['Meetings', meetingFilter, setMeetingFilter, meetings],
             ].map(([label, value, setter, records]) => (
-              <label key={label as string} className="text-xs font-bold text-[var(--ds-secondary)]">{label as string}
+              <label key={label as string} className="text-sm font-semibold text-[var(--ds-secondary)]">{label as string} status
                 <select className="input mt-1 w-full" value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)}>
-                  <option value="ALL">All</option>
-                  {[...new Set((records as Array<{ status: string }>).map((item) => item.status))].sort().map((status) => <option key={status} value={status}>{status}</option>)}
+                  <option value="ALL">All statuses</option>
+                  {[...new Set((records as Array<{ status: string }>).map((item) => item.status))].sort().map((status) => <option key={status} value={status}>{formatStatusLabel(status)}</option>)}
                 </select>
               </label>
             ))}
@@ -606,10 +607,10 @@ export const Reports = () => {
                 ['Welfare', welfareFilter, setWelfareFilter, claims],
                 ['Meetings', meetingFilter, setMeetingFilter, meetings],
               ].map(([label, value, setter, records]) => (
-                <label key={label as string} className="text-xs font-bold text-[var(--ds-secondary)]">{label as string} status
+                  <label key={label as string} className="text-sm font-semibold text-[var(--ds-secondary)]">{label as string} status
                   <select className="input mt-1 w-full" value={value as string} onChange={(event) => (setter as (value: string) => void)(event.target.value)}>
                     <option value="ALL">All statuses</option>
-                    {[...new Set((records as Array<{ status: string }>).map((item) => item.status))].sort().map((status) => <option key={status} value={status}>{status}</option>)}
+                      {[...new Set((records as Array<{ status: string }>).map((item) => item.status))].sort().map((status) => <option key={status} value={status}>{formatStatusLabel(status)}</option>)}
                   </select>
                 </label>
               ))}

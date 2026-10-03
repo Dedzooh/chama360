@@ -60,7 +60,7 @@ export const ChamaDetailsStep = () => {
               Choose cover
             </Button>
           </div>
-          <TextField label="Cover URL" placeholder="https://..." value={draft.coverImageUrl ?? ''} onChange={(event) => updateDraft({ coverImageUrl: event.target.value })} />
+          <TextField label="Cover image link (optional)" helperText="Paste a direct link to an image, or upload one above." placeholder="https://..." value={draft.coverImageUrl ?? ''} onChange={(event) => updateDraft({ coverImageUrl: event.target.value })} />
         </Card>
 
         <Card className="space-y-4 p-5">
@@ -89,7 +89,7 @@ export const ChamaDetailsStep = () => {
               Upload logo
             </Button>
           </div>
-          <TextField label="Logo URL" placeholder="https://..." value={draft.logoUrl ?? ''} onChange={(event) => updateDraft({ logoUrl: event.target.value })} />
+          <TextField label="Logo image link (optional)" helperText="Paste a direct link to an image, or upload a logo above." placeholder="https://..." value={draft.logoUrl ?? ''} onChange={(event) => updateDraft({ logoUrl: event.target.value })} />
         </Card>
       </div>
 

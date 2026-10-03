@@ -5,7 +5,7 @@ import { authenticate, rateLimitSensitive, requireMfaIfEnabled } from '../../mid
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { requireSubscriptionFeature } from '../../middleware/subscription';
 export function registerLoansRoutes(router: Router, context: any): void {
-  const { db, loanApplySchema, guaranteeDecisionSchema, loanRepaySchema, getOrganizationAccess, isFinanceManager, isWelfareApprover, requireOrganizationStatus, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit } = context;
+  const { db, loanApplySchema, loanDecisionSchema, guaranteeDecisionSchema, loanRepaySchema, getOrganizationAccess, hasOrganizationPermission, isFinanceManager, isWelfareApprover, requireOrganizationStatus, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit } = context;
 router.post(
   '/:id/loans/apply',
   authenticate,
@@ -15,7 +15,7 @@ router.post(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, req.user.id);
+    const membership = await getOrganizationAccess(id, req.user.id as string);
 
     const currentOrganization = await requireOrganizationStatus(id);
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
@@ -24,14 +24,17 @@ router.post(
 
     const payload = loanApplySchema.parse(req.body);
     const amountRequested = payload.amountRequested;
-    const loanRules = (currentOrganization).settings?.loanRules ?? {};
+    const loanRules = (currentOrganization as any).settings?.loanRules ?? {};
     const requiredGuarantors = getRequiredGuarantorCount(loanRules);
     const maxLoanAmount = getRuleNumber(loanRules.maxLoanAmount, 0);
     if (maxLoanAmount > 0 && amountRequested > maxLoanAmount) {
       throw new BadRequestError(`Loan amount cannot exceed the Chama rule limit of ${maxLoanAmount}`);
     }
 
-    const borrowerId = payload.memberId || (req.user.id);
+    const borrowerId = payload.memberId || (req.user.id as string);
+    if (borrowerId !== req.user.id && !hasOrganizationPermission(membership, 'LOAN_APPLY_FOR_OTHERS')) {
+      throw new ForbiddenError('You do not have permission to apply for a loan on behalf of another member');
+    }
     const guarantorIds = Array.from(new Set(payload.guarantors)).filter((guarantorId) => guarantorId !== borrowerId);
     if (payload.guarantors.includes(borrowerId)) {
       throw new BadRequestError('Borrowers cannot guarantee their own loans');
@@ -40,7 +43,7 @@ router.post(
       throw new BadRequestError(`This Chama requires at least ${requiredGuarantors} guarantor${requiredGuarantors === 1 ? '' : 's'} for this loan amount`);
     }
 
-    const linkedChamaId = (currentOrganization).chama?.id;
+    const linkedChamaId = (currentOrganization as any).chama?.id;
     if (!linkedChamaId) {
       throw new BadRequestError('Organization is not linked to an active Chama');
     }
@@ -101,7 +104,7 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'CREATE',
       entityType: 'Loan',
       entityId: loan.id,
@@ -121,7 +124,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const loans = await db.loan.findMany({
       where: { organizationId: id },
@@ -135,7 +138,29 @@ router.get(
       },
     });
 
-    res.json({ loans });
+    const auditEntries = loans.length ? await db.organizationAuditLog.findMany({
+      where: { organizationId: id, entityType: 'Loan', entityId: { in: loans.map((loan: any) => loan.id) } },
+      select: { entityId: true, metadata: true, createdAt: true, userId: true },
+      orderBy: { createdAt: 'desc' },
+    }) : [];
+    const legacyEntries = loans.length ? await db.auditLog.findMany({ where: { organizationId: id, entityType: 'Loan', entityId: { in: loans.map((loan: any) => loan.id) } }, select: { entityId: true, metadata: true, newValues: true, createdAt: true, userId: true }, orderBy: { createdAt: 'desc' } }) : [];
+    const reasons = new Map<string, string>();
+    const reviewers = new Map<string, string>();
+    const reviewDates = new Map<string, Date>();
+    const decisionEntries: any[] = [...auditEntries, ...legacyEntries];
+    for (const entry of decisionEntries) {
+      const metadata = entry.metadata as any;
+      const reason = metadata?.reason ?? metadata?.decisionReason ?? (entry as any).newValues?.decisionReason;
+      if (reason && !reasons.has(entry.entityId)) {
+        reasons.set(entry.entityId, reason);
+        if (entry.userId) reviewers.set(entry.entityId, entry.userId);
+        reviewDates.set(entry.entityId, entry.createdAt);
+      }
+    }
+    const reviewerIds = [...new Set(reviewers.values())];
+    const reviewerUsers = reviewerIds.length ? await db.user.findMany({ where: { id: { in: reviewerIds } }, select: { id: true, firstName: true, lastName: true } }) : [];
+    const reviewerById = new Map(reviewerUsers.map((reviewer: any) => [reviewer.id, reviewer]));
+    res.json({ loans: loans.map((loan: any) => ({ ...loan, decisionReason: loan.decisionReason ?? reasons.get(loan.id) ?? null, reviewedBy: loan.reviewedBy ?? reviewerById.get(reviewers.get(loan.id) ?? '') ?? null, reviewedAt: loan.reviewedAt ?? reviewDates.get(loan.id) ?? null })) });
   })
 );
 
@@ -148,7 +173,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const [total, pending, approved, active, paid, rejected, outstanding, requestedSum, approvedSum] = await Promise.all([
       db.loan.count({ where: { organizationId: id } }),
@@ -185,7 +210,7 @@ router.get(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const loan = await db.loan.findFirst({
       where: { id: loanId, organizationId: id },
@@ -194,7 +219,7 @@ router.get(
         requestedBy: true,
         reviewedBy: true,
         guarantors: { include: { member: true } },
-        repayments: { orderBy: { createdAt: 'desc' } },
+      repayments: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -202,7 +227,14 @@ router.get(
       throw new NotFoundError('Loan not found');
     }
 
-    res.json({ loan });
+    const [decisionAudit, legacyAudit] = await Promise.all([
+      db.organizationAuditLog.findFirst({ where: { organizationId: id, entityType: 'Loan', entityId: loanId, metadata: { path: ['reviewedAction'], not: null } }, orderBy: { createdAt: 'desc' }, select: { metadata: true, createdAt: true, userId: true } }),
+      db.auditLog.findFirst({ where: { organizationId: id, entityType: 'Loan', entityId: loanId }, orderBy: { createdAt: 'desc' }, select: { newValues: true, metadata: true, createdAt: true, userId: true } }),
+    ]);
+    const decisionReason = (loan as any).decisionReason ?? (decisionAudit?.metadata as any)?.reason ?? (legacyAudit?.newValues as any)?.decisionReason ?? (legacyAudit?.metadata as any)?.decisionReason ?? null;
+    const decisionEntry = decisionAudit ?? legacyAudit;
+    const decisionReviewer = !loan.reviewedBy && decisionEntry?.userId ? await db.user.findUnique({ where: { id: decisionEntry.userId }, select: { id: true, firstName: true, lastName: true } }) : null;
+    res.json({ loan: { ...loan, decisionReason, reviewedBy: loan.reviewedBy ?? decisionReviewer, reviewedAt: loan.reviewedAt ?? decisionEntry?.createdAt ?? null } });
   })
 );
 
@@ -218,7 +250,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can approve loans');
     }
@@ -228,12 +260,14 @@ router.patch(
       throw new ForbiddenError('Closed organizations cannot approve loans');
     }
 
+    const payload = loanDecisionSchema.parse(req.body);
     const existing = await db.loan.findFirst({ where: { id: loanId, organizationId: id } });
     if (!existing) {
       throw new NotFoundError('Loan not found');
     }
+    if (existing.status !== LoanStatus.PENDING) throw new BadRequestError('Only pending loans can be approved');
 
-    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization).settings?.loanRules);
+    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization as any).settings?.loanRules);
     await requireAcceptedLoanGuarantees(loanId, requiredGuarantors);
 
     const amountApproved = Number(existing.amountRequested ?? existing.amount ?? 0);
@@ -243,8 +277,9 @@ router.patch(
         status: LoanStatus.APPROVED,
         amountApproved: amountApproved,
         amount: amountApproved,
-        reviewedById: req.user.id,
+        reviewedById: req.user.id as string,
         reviewedAt: new Date(),
+        decisionReason: payload.reason,
       },
       include: {
         borrower: true,
@@ -257,13 +292,13 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'UPDATE',
       entityType: 'Loan',
       entityId: loanId,
       oldValues: existing,
       newValues: loan,
-      metadata: { reviewedAction: 'APPROVED' },
+      metadata: { reviewedAction: 'APPROVED', reason: payload.reason },
     });
 
     res.json({ loan });
@@ -279,7 +314,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const currentOrganization = await requireOrganizationStatus(id);
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
@@ -353,7 +388,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const existing = await db.loan.findFirst({ where: { id: loanId, organizationId: id }, include: { guarantors: true } });
     if (!existing) {
@@ -411,7 +446,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can reject loans');
     }
@@ -421,17 +456,20 @@ router.patch(
       throw new ForbiddenError('Closed organizations cannot reject loans');
     }
 
+    const payload = loanDecisionSchema.parse(req.body);
     const existing = await db.loan.findFirst({ where: { id: loanId, organizationId: id } });
     if (!existing) {
       throw new NotFoundError('Loan not found');
     }
+    if (existing.status !== LoanStatus.PENDING) throw new BadRequestError('Only pending loans can be rejected');
 
     const loan = await db.loan.update({
       where: { id: loanId },
       data: {
         status: LoanStatus.REJECTED,
-        reviewedById: req.user.id,
+        reviewedById: req.user.id as string,
         reviewedAt: new Date(),
+        decisionReason: payload.reason,
       },
       include: {
         borrower: true,
@@ -444,13 +482,13 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'UPDATE',
       entityType: 'Loan',
       entityId: loanId,
       oldValues: existing,
       newValues: loan,
-      metadata: { reviewedAction: 'REJECTED' },
+      metadata: { reviewedAction: 'REJECTED', reason: payload.reason },
     });
 
     res.json({ loan });
@@ -469,7 +507,7 @@ router.patch(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isFinanceManager(access)) {
       throw new ForbiddenError('Only Treasurer or Admin can mark loans as disbursed');
     }
@@ -488,7 +526,7 @@ router.patch(
       throw new BadRequestError('Only approved loans can be disbursed');
     }
 
-    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization).settings?.loanRules);
+    const requiredGuarantors = getRequiredGuarantorCount((currentOrganization as any).settings?.loanRules);
     await requireAcceptedLoanGuarantees(loanId, requiredGuarantors);
 
     const linkedChamaId = currentOrganization.chama?.id;
@@ -518,7 +556,7 @@ router.post(
     }
 
     const { id, loanId } = req.params as { id: string; loanId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isFinanceManager(access)) {
       throw new ForbiddenError('Only Treasurer or Admin can record repayments');
     }

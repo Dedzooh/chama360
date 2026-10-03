@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, CalendarClock, CreditCard, Download, RefreshCw, ShieldCheck, TrendingUp, Users } from 'lucide-react';
 import api from '../../config/api';
+import { ROUTES } from '../../config/routes';
 import { Button, ConfirmDialog, Dialog, TextField } from '../../design-system';
 import { useAuthStore } from '../../store/authStore';
 
@@ -81,7 +83,7 @@ export const PlatformSubscriptions = () => {
   const updatePlatformRole = async (id: string, role: string) => { setLoading(true); setError(''); try { const response = await api.patch(`/platform/subscriptions/platform-admins/${id}`, { role: role || null }); setMessage(response.data.message); await load(); } catch (requestError: any) { setError(requestError?.response?.data?.error?.message || 'Unable to update the platform role.'); setLoading(false); } };
 
   return <div className="subscription-page platform-revenue-page">
-    <section className="subscription-hero"><span><ShieldCheck /> Restricted CHAMAZ360 operations</span><h1>Revenue & subscriptions</h1><p>Track recurring revenue, conversion, payment health, estimated transaction costs, and chama capacity from one control centre.</p><button className="revenue-export-button" type="button" onClick={() => void exportReconciliation()}><Download/> Export reconciliation</button></section>
+    <section className="subscription-hero"><span><ShieldCheck /> Restricted CHAMAZ360 operations</span><h1>Revenue & subscriptions</h1><p>Track recurring revenue, conversion, payment health, estimated transaction costs, and chama capacity from one control centre.</p><div className="mt-4 flex flex-wrap gap-3"><button className="revenue-export-button" type="button" onClick={() => void exportReconciliation()}><Download/> Export reconciliation</button><Link className="revenue-export-button" to={ROUTES.platform.operations}>Background jobs & callbacks</Link></div></section>
     {error ? <div className="error-banner px-4 py-3 text-sm">{error}</div> : null}{message ? <div className="success-banner px-4 py-3 text-sm">{message}</div> : null}
     {readiness ? <section className={`provider-readiness ${readiness.productionReady ? 'is-ready' : ''}`}><div><ShieldCheck/><span><strong>{readiness.productionReady ? 'Production providers ready' : 'Development flow ready'}</strong><small>{readiness.message}</small></span></div><ul>{Object.entries(readiness.checks).map(([name, ready]) => <li key={name} className={ready ? 'is-ready' : ''}><i>{ready ? '✓' : '!'}</i>{name.replace(/([A-Z])/g, ' $1')}</li>)}</ul></section> : null}
     <section className="revenue-kpi-grid">

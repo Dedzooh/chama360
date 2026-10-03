@@ -3,11 +3,10 @@ import { Banknote, BellRing, CalendarDays, CheckCircle2, ChevronLeft, ChevronRig
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
 import { useCompactLayout } from '../../hooks/useCompactLayout';
 import { useAuthStore } from '../../store/authStore';
-import { organizationService, parseMpesaSmsClient, type ContributionRecord, type ContributionSummary } from '../../services/organizationService';
+import { organizationService, type ContributionRecord, type ContributionSummary } from '../../services/organizationService';
 import { mpesaService } from '../../services/mpesaService';
-import { Badge, Button, Card, Chip, Dialog, EmptyState, MetricCard, SelectField, TextField } from '../../design-system';
+import { Badge, Button, Card, Chip, Dialog, EmptyState, SelectField, TextField } from '../../design-system';
 import { ContributionFilters } from './ContributionFilters';
-import { MessageSquareQuote } from 'lucide-react';
 
 const CURRENCY = 'KES';
 const formatMoney = (value: number | string | undefined | null) => `${CURRENCY} ${Number(value ?? 0).toLocaleString()}`;
@@ -20,13 +19,22 @@ const statusTone: Record<string, string> = {
   REVERSED: 'bg-slate-100 text-slate-600 border-slate-200',
 };
 
-const financeRoles = ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'];
+const statusLabel: Record<string, string> = {
+  PENDING: 'Due',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  PARTIAL: 'Part-paid',
+  REVERSED: 'Reversed',
+  FAILED: 'Payment failed',
+};
+
+const financeRoles = ['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN'];
 
 export const Contributions = () => {
   const compactLayout = useCompactLayout();
   const { currentOrganization, refreshOrganizations } = useOrganizationWorkspace();
   const user = useAuthStore((state) => state.user);
-  const paymentSettings = (currentOrganization?.metadata as { paymentSettings?: { mode?: string; mpesaNumber?: string; paybillNumber?: string; accountNumber?: string; accountReference?: string; transactionDesc?: string; isEnabled?: boolean; acceptedMethods?: Array<'MPESA' | 'BANK' | 'CASH'>; bankName?: string; bankAccountName?: string; bankAccountNumber?: string; paymentInstructions?: string } } | undefined)?.paymentSettings;
+  const paymentSettings = (currentOrganization?.metadata as { paymentSettings?: { mode?: string; mpesaNumber?: string; paybillNumber?: string; accountNumber?: string; accountReference?: string; transactionDesc?: string; isEnabled?: boolean } } | undefined)?.paymentSettings;
   const organizationSettings = (currentOrganization as { settings?: { contributionRules?: Record<string, any>; notificationRules?: Record<string, any> } } | null)?.settings;
   const settingsContributionRules = organizationSettings?.contributionRules ?? {};
   const contributionRules = Object.keys(settingsContributionRules).length ? settingsContributionRules : (currentOrganization?.metadata as { contributionRules?: Record<string, any> } | undefined)?.contributionRules ?? {};
@@ -51,15 +59,16 @@ export const Contributions = () => {
   const [actionReference, setActionReference] = useState('');
   const [reverseReason, setReverseReason] = useState('');
   const [stkContribution, setStkContribution] = useState<ContributionRecord | null>(null);
+  const [reportPaymentContribution, setReportPaymentContribution] = useState<ContributionRecord | null>(null);
+  const [reportedAmount, setReportedAmount] = useState('');
+  const [reportedMethod, setReportedMethod] = useState<'CASH' | 'MPESA' | 'BANK'>('MPESA');
+  const [reportedReference, setReportedReference] = useState('');
+  const [reportingPayment, setReportingPayment] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<{ contribution: ContributionRecord; payment: NonNullable<ContributionRecord['payments']>[number] } | null>(null);
+  const [reviewReason, setReviewReason] = useState('');
+  const [reviewingPayment, setReviewingPayment] = useState(false);
   const [stkPhone, setStkPhone] = useState(user?.phone ?? '');
   const [stkMessage, setStkMessage] = useState<string | null>(null);
-  const [proofContribution, setProofContribution] = useState<ContributionRecord | null>(null);
-  const [proofSmsText, setProofSmsText] = useState('');
-  const [proofReference, setProofReference] = useState('');
-  const [proofAmount, setProofAmount] = useState('');
-  const [proofMethod, setProofMethod] = useState<'MPESA' | 'BANK' | 'CASH'>('MPESA');
-  const [proofNote, setProofNote] = useState('');
-  const [proofSuccess, setProofSuccess] = useState<string | null>(null);
   const [calendarPeriod, setCalendarPeriod] = useState(() => new Date().toISOString().slice(0, 7));
   const [exportingStatement, setExportingStatement] = useState(false);
   const memberReferenceSuffix = (user?.phone ?? user?.id ?? 'MEMBER').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
@@ -225,58 +234,46 @@ export const Contributions = () => {
     } finally { setSaving(false); }
   };
 
-  const acceptedProofMethods = (paymentSettings?.acceptedMethods ?? ['MPESA', 'BANK', 'CASH']) as Array<'MPESA' | 'BANK' | 'CASH'>;
-
-  const openProofModal = (contribution: ContributionRecord) => {
-    setProofContribution(contribution);
-    setProofSmsText('');
-    setProofReference('');
-    setProofAmount(String(Number(contribution.amount) + Number(contribution.penalties ?? 0)));
-    setProofMethod(acceptedProofMethods[0] ?? 'MPESA');
-    setProofNote('');
-    setProofSuccess(null);
-    setError(null);
+  const openPaymentReport = (contribution: ContributionRecord) => {
+    setReportPaymentContribution(contribution);
+    setReportedAmount(String(dueAmountFor(contribution)));
+    setReportedMethod('MPESA');
+    setReportedReference('');
   };
 
-  const applyProofSms = (text: string) => {
-    setProofSmsText(text);
-    const parsed = parseMpesaSmsClient(text);
-    if (parsed) {
-      setProofReference(parsed.receipt);
-      setProofAmount(String(parsed.amount));
-      if (parsed.paidAt) setProofNote((note) => note || `Parsed from M-Pesa SMS: paid ${new Date(parsed.paidAt!).toLocaleString('en-KE')}`);
-      setError(null);
-    }
-  };
-
-  const submitProof = async (event: FormEvent<HTMLFormElement>) => {
+  const submitPaymentReport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!currentOrganization?.id || !proofContribution) return;
-    const parsedAmount = Number(proofAmount);
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setError('Enter the amount you paid.');
-      return;
-    }
-    if (proofMethod !== 'CASH' && !proofReference.trim()) {
-      setError(proofMethod === 'MPESA' ? 'Paste your M-Pesa SMS or enter the receipt code.' : 'Enter the bank transaction reference.');
-      return;
-    }
-    setSaving(true);
+    if (!currentOrganization?.id || !reportPaymentContribution) return;
+    setReportingPayment(true);
     setError(null);
     try {
-      const result = await organizationService.submitPaymentProof(currentOrganization.id, proofContribution.id, {
-        paymentMethod: proofMethod,
-        amount: parsedAmount,
-        reference: proofReference.trim() || undefined,
-        note: proofNote.trim() || undefined,
-      });
-      setProofSuccess(result.message || 'Payment proof submitted for confirmation.');
-      setProofContribution(null);
+      await organizationService.submitContributionPayment(currentOrganization.id, reportPaymentContribution.id, { amount: Number(reportedAmount), paymentMethod: reportedMethod, reference: reportedReference.trim() });
+      setReportPaymentContribution(null);
       await loadData();
-    } catch (proofError) {
-      setError(proofError instanceof Error ? proofError.message : 'Could not submit payment proof');
+      setSaveMessage('Payment sent to the Treasurer for checking. Your contribution will update after they confirm it.');
+    } catch (submissionError) {
+      setError(submissionError instanceof Error ? submissionError.message : 'Could not send your payment report.');
     } finally {
-      setSaving(false);
+      setReportingPayment(false);
+    }
+  };
+
+  const reviewMemberPayment = async (action: 'approve' | 'reject', target = reviewTarget) => {
+    if (!currentOrganization?.id || !target) return;
+    if (action === 'reject' && reviewReason.trim().length < 3) return;
+    setReviewingPayment(true);
+    setError(null);
+    try {
+      const response = await organizationService.reviewContributionPayment(currentOrganization.id, target.contribution.id, target.payment.id, action, reviewReason.trim() || undefined);
+      setSaveMessage(response.message);
+      setReviewTarget(null);
+      setReviewReason('');
+      await loadData();
+      await refreshOrganizations();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : 'Could not update this payment report.');
+    } finally {
+      setReviewingPayment(false);
     }
   };
 
@@ -299,6 +296,20 @@ export const Contributions = () => {
   const penaltyAmount = Number(contributionRules.penaltyRules?.lateContributionPenalty ?? contributionRules.latePenalty ?? 0);
   const myContributions = contributions.filter((item) => item.memberId === user?.id);
   const myPenalties = myContributions.reduce((sum, item) => sum + Number(item.penalties ?? 0), 0);
+  const paidAmountFor = (item: ContributionRecord) => {
+    const settled = (item.payments ?? []).filter((payment) => payment.status === 'COMPLETED').reduce((sum, payment) => sum + Number(payment.amount), 0);
+    return item.payments?.length ? settled : item.status === 'PAID' ? Number(item.amount) : 0;
+  };
+  const dueAmountFor = (item: ContributionRecord) => item.status === 'REVERSED' ? 0 : Math.max(0, Number(item.amount) + Number(item.penalties ?? 0) - paidAmountFor(item));
+  const myPaidAmount = myContributions.reduce((sum, item) => sum + paidAmountFor(item), 0);
+  const myDueAmount = myContributions.length ? myContributions.reduce((sum, item) => sum + dueAmountFor(item), 0) : Number(summary?.outstandingAmount ?? 0);
+  const receiptStatusLabel: Record<string, string> = { MATCHED: 'Matched automatically', RECORDED: 'Confirmed by Treasurer', NEEDS_REVIEW: 'Needs Treasurer review', FAILED: 'Payment failed', PROCESSING: 'Waiting for M-Pesa confirmation', AWAITING_CONFIRMATION: 'Waiting for Treasurer', REJECTED: 'Needs more information' };
+  const paymentReviewActions = (contribution: ContributionRecord) => {
+    if (!canRecord) return null;
+    const waiting = (contribution.payments ?? []).filter((payment) => payment.matchStatus === 'AWAITING_CONFIRMATION');
+    if (!waiting.length) return null;
+    return <div className="mt-3 space-y-2">{waiting.map((payment) => <div key={payment.id} className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p className="font-bold">Member says they paid {formatMoney(payment.amount)}</p><p className="mt-1">{payment.paymentMethod ?? 'Payment'} · Receipt/reference: <strong>{payment.receiptNumber ?? payment.reference}</strong>{payment.submittedAt ? ` · Reported ${new Date(payment.submittedAt).toLocaleString('en-KE')}` : ''}</p><p className="mt-2">Check the receipt against your M-Pesa, bank, or cash records before confirming.</p><div className="mt-3 flex flex-wrap gap-2"><Button onClick={() => void reviewMemberPayment('approve', { contribution, payment })} disabled={reviewingPayment} className="min-h-10">Confirm received</Button><Button variant="outline" disabled={reviewingPayment} onClick={() => { setReviewTarget({ contribution, payment }); setReviewReason(''); }}>Ask member to check details</Button></div></div>)}</div>;
+  };
   const myAllocatedPeriods = [...new Set(myContributions.flatMap((item) => item.allocations?.map((allocation) => allocation.period) ?? []))].sort();
   const paidThroughPeriod = myAllocatedPeriods.at(-1) ?? null;
   const formatPeriod = (value: string) => {
@@ -368,8 +379,8 @@ export const Contributions = () => {
       autoTable(doc, {
         ...tableTheme,
         startY: (doc as any).lastAutoTable.finalY + 8,
-        head: [['Period', 'Amount', 'Status', 'Penalty', 'Paid date', 'Reference']],
-        body: myContributions.length ? myContributions.map((item) => [item.period ?? '—', formatMoney(item.amount), item.status, formatMoney(item.penalties), item.paidAt?.slice(0, 10) ?? '—', item.reference ?? '—']) : [['—', '—', 'No contribution records', '—', '—', '—']],
+        head: [['Period', 'Amount', 'Paid', 'Still due', 'Penalty', 'Receipt / reference']],
+        body: myContributions.length ? myContributions.map((item) => [item.period ?? '—', formatMoney(item.amount), formatMoney(paidAmountFor(item)), formatMoney(dueAmountFor(item)), formatMoney(item.penalties), item.payments?.map((payment) => payment.receiptNumber).filter(Boolean).join(', ') || item.reference || '—']) : [['—', '—', '—', '—', '—', 'No contribution records']],
       });
       if (myAllocatedPeriods.length) {
         autoTable(doc, {
@@ -410,6 +421,16 @@ export const Contributions = () => {
       </div>
       <div className="section-body grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
+          <div className="flex items-center gap-2 text-emerald-700"><CheckCircle2 className="h-5 w-5" /><strong>Paid so far</strong></div>
+          <p className="mt-3 text-2xl font-black text-[var(--ds-secondary)]">{formatMoney(myPaidAmount)}</p>
+          <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Confirmed payments across your contributions.</p>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 text-amber-700"><Wallet className="h-5 w-5" /><strong>Still due</strong></div>
+          <p className="mt-3 text-2xl font-black text-[var(--ds-secondary)]">{formatMoney(myDueAmount)}</p>
+          <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Includes any unpaid penalties.</p>
+        </Card>
+        <Card className="p-4">
           <div className="flex items-center gap-2 text-[var(--ds-primary)]"><CalendarDays className="h-5 w-5" /><strong>Monthly deadline</strong></div>
           <p className="mt-3 text-2xl font-black text-[var(--ds-secondary)]">{nextDueLabel}</p>
           <p className="mt-1 text-sm text-[var(--ds-text-muted)]">{paidThroughPeriod ? `Paid through ${formatPeriod(paidThroughPeriod)} · ` : ''}{monthlyAmount ? `${formatMoney(monthlyAmount)} monthly` : 'Amount set by the Chama'}</p>
@@ -421,8 +442,8 @@ export const Contributions = () => {
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-2 text-emerald-700"><Smartphone className="h-5 w-5" /><strong>M-Pesa payment</strong></div>
-          <p className="mt-3 text-2xl font-black text-[var(--ds-secondary)]">{paymentSettings?.mode === 'PAYBILL' ? paymentSettings.paybillNumber ?? 'PayBill' : 'STK Push'}</p>
-          <p className="mt-1 text-sm text-[var(--ds-text-muted)]">{paymentSettings?.mode === 'PAYBILL' ? <>Your account: <strong className="text-[var(--ds-secondary)]">{memberPaymentReference}</strong></> : `STK reference: ${memberPaymentReference}`}</p>
+          <p className="mt-3 text-2xl font-black text-[var(--ds-secondary)]">{!paymentSettings?.isEnabled ? 'Ask your Treasurer' : paymentSettings.mode === 'PAYBILL' ? paymentSettings.paybillNumber ?? 'PayBill' : paymentSettings.mpesaNumber ?? 'M-Pesa'}</p>
+          <p className="mt-1 text-sm text-[var(--ds-text-muted)]">{paymentSettings?.isEnabled ? paymentSettings.mode === 'PAYBILL' ? <>Your account: <strong className="text-[var(--ds-secondary)]">{memberPaymentReference}</strong></> : 'Send Money to the number above, then report the receipt below.' : 'Your Treasurer can share the group payment details.'}</p>
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-2 text-sky-700"><BellRing className="h-5 w-5" /><strong>Reminders</strong></div>
@@ -464,17 +485,21 @@ export const Contributions = () => {
   const calendarStateTone = calendarState === 'Paid' || calendarState === 'Advance covered' ? 'success' : calendarState === 'Overdue' ? 'error' : calendarState === 'Pending' ? 'warning' : 'neutral';
 
   const contributionCalendar = (
-    <section className="section-shell overflow-hidden">
-      <div className="section-header flex flex-wrap items-center justify-between gap-3">
-        <div><p className="text-sm text-[var(--ds-text-muted)]">Contribution calendar</p><h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">{calendarLabel}</h2></div>
+    <details className="section-shell overflow-hidden">
+      <summary className="section-header flex cursor-pointer list-none flex-wrap items-center justify-between gap-3">
+        <div><p className="text-sm text-[var(--ds-text-muted)]">Optional monthly view</p><h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Contribution calendar · {calendarLabel}</h2></div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" aria-label="Previous month" onClick={() => moveCalendarMonth(-1)}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="outline" onClick={() => setCalendarPeriod(new Date().toISOString().slice(0, 7))}>Today</Button>
-          <Button variant="outline" aria-label="Next month" onClick={() => moveCalendarMonth(1)}><ChevronRight className="h-4 w-4" /></Button>
+          <span className="text-sm font-semibold text-[var(--ds-primary)]">View details</span>
+          <CalendarDays className="h-5 w-5 text-[var(--ds-primary)]" />
         </div>
-      </div>
+      </summary>
       <div className="section-body grid gap-5 lg:grid-cols-[1fr_280px]">
         <div>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <Button variant="outline" aria-label="Previous month" onClick={() => moveCalendarMonth(-1)}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="outline" onClick={() => setCalendarPeriod(new Date().toISOString().slice(0, 7))}>This month</Button>
+            <Button variant="outline" aria-label="Next month" onClick={() => moveCalendarMonth(1)}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
           <div className="grid grid-cols-7 text-center text-xs font-semibold uppercase tracking-wide text-[var(--ds-text-muted)]">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day} className="py-2">{day}</span>)}</div>
           <div className="grid grid-cols-7 overflow-hidden rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-border)] gap-px">
             {Array.from({ length: calendarOffset }).map((_, index) => <div key={`blank-${index}`} className="min-h-12 bg-[var(--ds-surface-2)] sm:min-h-16" />)}
@@ -496,7 +521,7 @@ export const Contributions = () => {
           </dl>
         </Card>
       </div>
-    </section>
+    </details>
   );
 
   const mobileLayout = (
@@ -504,7 +529,7 @@ export const Contributions = () => {
       <section className="chama360-module-hero chama360-module-hero-contributions">
         <div className="chama360-module-hero-main">
           <div className="chama360-module-hero-topline">
-            <span>{canRecord ? 'Finance workflow' : 'My contribution records'}</span>
+            <span>{canRecord ? 'For the finance team' : 'My contributions'}</span>
             <strong>{currentOrganization.name}</strong>
           </div>
           <div className="chama360-module-hero-copy">
@@ -514,7 +539,7 @@ export const Contributions = () => {
           <div className="chama360-module-hero-actions">
             <a href="#contribution-ledger-mobile">
               <ClipboardList className="h-4 w-4" />
-              {canRecord ? 'Ledger' : 'My records'}
+              {canRecord ? 'Payment history' : 'My records'}
             </a>
             {canRecord ? <a href="#record-contribution-mobile"><Plus className="h-4 w-4" />Record</a> : null}
             <button type="button" onClick={() => void loadData()}>
@@ -526,7 +551,7 @@ export const Contributions = () => {
         <div className="chama360-module-hero-stats">
           <article>
             <span className="green"><Wallet className="h-5 w-5" /></span>
-            <p>Total</p>
+            <p>Records</p>
             <strong>{loading ? '...' : total}</strong>
             <small>{canRecord ? 'Group ledger records' : 'Your records'}</small>
           </article>
@@ -538,7 +563,7 @@ export const Contributions = () => {
           </article>
           <article>
             <span className="gold"><Banknote className="h-5 w-5" /></span>
-            <p>Mode</p>
+            <p>Payment method</p>
             <strong>{paymentSettings?.isEnabled ? 'M-Pesa' : 'Cash'}</strong>
             <small>{pending} pending items</small>
           </article>
@@ -547,21 +572,15 @@ export const Contributions = () => {
 
       {error ? <Card className="border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">{error}</Card> : null}
 
-      {memberPositionPanel}
+      {!canRecord ? memberPositionPanel : null}
 
       {contributionCalendar}
 
-      <section className="grid grid-cols-2 gap-2.5">
-        <MetricCard title="Total" value={loading ? '...' : total.toString()} caption="Records" tone="emerald" icon={<Wallet className="h-5 w-5" />} className="p-4" />
-        <MetricCard title="Paid" value={loading ? '...' : paid.toString()} caption="Completed" tone="success" icon={<Badge tone="success">Paid</Badge>} className="p-4" />
-        <MetricCard title="Pending" value={loading ? '...' : pending.toString()} caption="Open" tone="warning" icon={<Badge tone="warning">Due</Badge>} className="p-4" />
-        <MetricCard title="Reversed" value={loading ? '...' : reversed.toString()} caption="Voided" tone="error" icon={<Badge tone="error">Reset</Badge>} className="p-4" />
-      </section>
 
       <section className="section-shell overflow-hidden">
         <div className="section-header">
           <p className="text-sm text-[var(--ds-text-muted)]">Search</p>
-          <h2 className="mt-1 text-lg font-black text-[var(--ds-secondary)]">Ledger filters</h2>
+          <h2 className="mt-1 text-lg font-black text-[var(--ds-secondary)]">Find contributions</h2>
         </div>
         <div className="section-body space-y-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -586,8 +605,9 @@ export const Contributions = () => {
           filteredContributions.map((contribution) => {
             const canReverse = canRecord && contribution.status !== 'REVERSED';
             const canMarkPaid = canRecord && ['PENDING', 'OVERDUE', 'PARTIAL', 'FAILED'].includes(contribution.status);
-            const canSelfPay = !canRecord && paymentSettings?.isEnabled && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
-            const canSubmitProof = !canRecord && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
+            const canSelfPay = !canRecord && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
+            const hasPendingReport = contribution.payments?.some((payment) => payment.matchStatus === 'AWAITING_CONFIRMATION') ?? false;
+            const hasProcessingPayment = contribution.payments?.some((payment) => payment.matchStatus === 'PROCESSING') ?? false;
             return (
               <Card key={contribution.id} className="mobile-finance-card overflow-hidden p-0">
                 <div className="h-1.5 bg-gradient-to-r from-[var(--ds-primary)] via-[var(--ds-secondary)] to-[var(--ds-accent)]" />
@@ -599,7 +619,7 @@ export const Contributions = () => {
                         {contribution.member?.firstName ?? 'Member'} {contribution.member?.lastName ?? ''}
                       </h3>
                     </div>
-                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[contribution.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{contribution.status}</span>
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[contribution.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{statusLabel[contribution.status] ?? contribution.status}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <div className="rounded-2xl bg-[var(--ds-surface-2)] px-3 py-2">
@@ -616,7 +636,11 @@ export const Contributions = () => {
                     {contribution.paidAt ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">Paid {contribution.paidAt.slice(0, 10)}</span> : null}
                     {contribution.reference ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">Ref {contribution.reference}</span> : null}
                   </div>
-                  <div className="mt-4 grid gap-2">{canSelfPay ? <Button className="w-full" disabled={saving} onClick={() => openStkPayment(contribution)} startIcon={<Smartphone className="h-4 w-4" />}>Pay with STK Push</Button> : null}{canSubmitProof ? <Button variant="outline" className="w-full" disabled={saving} onClick={() => openProofModal(contribution)} startIcon={<MessageSquareQuote className="h-4 w-4" />}>I've paid — submit proof</Button> : null}{canMarkPaid ? <Button className="w-full" disabled={saving} onClick={() => void handleMarkPaid(contribution)} startIcon={<CheckCircle2 className="h-4 w-4" />}>Mark member paid</Button> : null}{canReverse ? <Button variant="outline" className="w-full" disabled={saving} onClick={() => void handleReverse(contribution)} startIcon={<RotateCcw className="h-4 w-4" />}>Reverse</Button> : null}</div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl border border-[var(--ds-border)] p-3"><span className="text-[var(--ds-text-muted)]">Paid</span><p className="mt-1 font-bold">{formatMoney(paidAmountFor(contribution))}</p></div><div className="rounded-xl border border-[var(--ds-border)] p-3"><span className="text-[var(--ds-text-muted)]">Still due</span><p className="mt-1 font-bold">{formatMoney(dueAmountFor(contribution))}</p></div></div>
+                  {Number(contribution.penalties ?? 0) > 0 ? <p className="mt-2 text-sm text-rose-700">Penalty included: {formatMoney(contribution.penalties)}</p> : null}
+                  {paymentReviewActions(contribution)}
+                  {contribution.payments?.length ? <details className="mt-3 rounded-xl border border-[var(--ds-border)] p-3"><summary className="cursor-pointer text-sm font-semibold text-[var(--ds-secondary)]">Payments and receipts ({contribution.payments.length})</summary><div className="mt-3 space-y-2">{contribution.payments.map((payment) => <div key={payment.id} className="rounded-lg bg-[var(--ds-surface-2)] p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{formatMoney(payment.amount)} · {payment.paymentMethod ?? 'Payment'}</strong><span>{receiptStatusLabel[payment.matchStatus] ?? 'Payment recorded'}</span></div><p className="mt-1 text-[var(--ds-text-muted)]">{payment.receiptNumber ? `Receipt ${payment.receiptNumber}` : `Reference ${payment.reference}`} · {new Date(payment.recordedAt).toLocaleDateString('en-KE')}</p>{payment.reviewNote ? <p className="mt-1 text-rose-700">Treasurer’s note: {payment.reviewNote}</p> : null}</div>)}</div></details> : null}
+                  <div className="mt-4 grid gap-2">{canSelfPay && paymentSettings?.isEnabled ? <Button className="w-full" disabled={saving} onClick={() => openStkPayment(contribution)} startIcon={<Smartphone className="h-4 w-4" />}>Pay with STK Push</Button> : null}{canSelfPay && !hasPendingReport && !hasProcessingPayment ? <Button variant="outline" className="w-full" onClick={() => openPaymentReport(contribution)}>I’ve paid · send receipt to Treasurer</Button> : hasPendingReport ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Your payment report is waiting for the Treasurer. This contribution is still due until it’s checked.</p> : hasProcessingPayment ? <p className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">M-Pesa is still confirming your payment. Wait for the result before sending another receipt.</p> : null}{canMarkPaid ? <Button className="w-full" disabled={saving} onClick={() => void handleMarkPaid(contribution)} startIcon={<CheckCircle2 className="h-4 w-4" />}>Mark member paid</Button> : null}{canReverse ? <Button variant="outline" className="w-full" disabled={saving} onClick={() => void handleReverse(contribution)} startIcon={<RotateCcw className="h-4 w-4" />}>Reverse</Button> : null}</div>
                 </div>
               </Card>
             );
@@ -658,7 +682,7 @@ export const Contributions = () => {
               {contributionStatus === 'PAID' ? 'Record confirmed payment' : 'Create due contribution'}
             </Button>
             {saveMessage ? <p role="status" className="text-sm font-semibold text-emerald-700">{saveMessage}</p> : null}
-          </form> : <div className="space-y-3 text-sm text-[var(--ds-text-muted)]"><p>{paymentSettings?.paymentInstructions ? paymentSettings.paymentInstructions : 'Your treasurer confirms contributions after reconciliation.'}</p>{acceptedProofMethods.includes('MPESA') && paymentSettings?.isEnabled ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><strong>{paymentSettings.mode === 'PAYBILL' ? `PayBill ${paymentSettings.paybillNumber ?? ''}` : `M-Pesa ${paymentSettings.mpesaNumber ?? "treasurer's number"}`}</strong><p className="mt-1">Use your personal account reference: <strong>{memberPaymentReference}</strong></p><p className="mt-1 text-xs">This reference identifies your payment during automatic reconciliation.</p></div> : null}{acceptedProofMethods.includes('BANK') && paymentSettings?.bankAccountNumber ? <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sky-900"><strong>{paymentSettings.bankName ?? 'Bank deposit'}</strong><p className="mt-1">Account name: <strong>{paymentSettings.bankAccountName || currentOrganization.name}</strong></p><p className="mt-1">Account number: <strong>{paymentSettings.bankAccountNumber}</strong></p></div> : null}<p>After paying, tap <strong>“I have paid — submit proof”</strong> on your contribution so the treasurer can confirm it in their review queue.</p></div>}
+          </form> : <div className="space-y-3 text-sm text-[var(--ds-text-muted)]"><p>STK Push and PayBill payments with your account reference can update automatically. For Send Money, cash, or bank transfer, choose “I’ve paid · send receipt to Treasurer” on the contribution and enter your receipt or transaction reference. It stays due until the Treasurer confirms it.</p>{paymentSettings?.isEnabled ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><strong>{paymentSettings.mode === 'PAYBILL' ? `PayBill ${paymentSettings.paybillNumber ?? ''}` : `Send Money to ${paymentSettings.mpesaNumber ?? 'the group M-Pesa number'}`}</strong>{paymentSettings.mode === 'PAYBILL' ? <p className="mt-1">Use your account reference: <strong>{memberPaymentReference}</strong></p> : null}</div> : <p>Ask your Treasurer for the group payment details.</p>}</div>}
         </div>
       </section>
     </div>
@@ -670,7 +694,7 @@ export const Contributions = () => {
       <section className="chama360-module-hero chama360-module-hero-contributions">
         <div className="chama360-module-hero-main">
           <div className="chama360-module-hero-topline">
-            <span>{canRecord ? 'Finance workflow' : 'My contribution records'}</span>
+            <span>{canRecord ? 'For the finance team' : 'My contributions'}</span>
             <strong>{currentOrganization.name}</strong>
           </div>
           <div className="chama360-module-hero-copy">
@@ -680,7 +704,7 @@ export const Contributions = () => {
           <div className="chama360-module-hero-actions">
             <a href="#contribution-ledger">
               <ClipboardList className="h-4 w-4" />
-              {canRecord ? 'Ledger' : 'My records'}
+              {canRecord ? 'Payment history' : 'My records'}
             </a>
             {canRecord ? <a href="#record-contribution"><Plus className="h-4 w-4" />Record</a> : null}
             <button type="button" onClick={() => void loadData()}>
@@ -692,7 +716,7 @@ export const Contributions = () => {
         <div className="chama360-module-hero-stats">
           <article>
             <span className="green"><Wallet className="h-5 w-5" /></span>
-            <p>Total</p>
+            <p>Records</p>
             <strong>{loading ? '...' : total}</strong>
             <small>{canRecord ? 'Group ledger records' : 'Your records'}</small>
           </article>
@@ -704,7 +728,7 @@ export const Contributions = () => {
           </article>
           <article>
             <span className="gold"><Banknote className="h-5 w-5" /></span>
-            <p>Pending</p>
+            <p>Still due</p>
             <strong>{loading ? '...' : pending}</strong>
             <small>{reversed} reversed</small>
           </article>
@@ -713,23 +737,17 @@ export const Contributions = () => {
 
       {error ? <Card className="border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">{error}</Card> : null}
 
-      {memberPositionPanel}
+      {!canRecord ? memberPositionPanel : null}
 
       {contributionCalendar}
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <MetricCard title="Total" value={loading ? '...' : total.toString()} caption="Records" tone="emerald" icon={<Wallet className="h-5 w-5" />} />
-        <MetricCard title="Paid" value={loading ? '...' : paid.toString()} caption="Completed" tone="success" icon={<Badge tone="success">Paid</Badge>} />
-        <MetricCard title="Pending" value={loading ? '...' : pending.toString()} caption="Awaiting payment" tone="warning" icon={<Badge tone="warning">Open</Badge>} />
-        <MetricCard title="Reversed" value={loading ? '...' : reversed.toString()} caption="Voided receipts" tone="error" icon={<Badge tone="error">Reset</Badge>} />
-      </section>
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <Card id="contribution-ledger" className="p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-[var(--ds-text-muted)]">Ledger</p>
-              <h2 className="text-xl font-black text-[var(--ds-secondary)]">{canRecord ? 'Contribution records' : 'My contribution records'}</h2>
+              <h2 className="text-xl font-black text-[var(--ds-secondary)]">{canRecord ? 'Payment history' : 'My payment history'}</h2>
             </div>
             <Button variant="outline" onClick={() => void loadData()} startIcon={<RefreshCw className="h-4 w-4" />}>
               Refresh
@@ -752,8 +770,9 @@ export const Contributions = () => {
               filteredContributions.map((contribution) => {
                 const canReverse = canRecord && contribution.status !== 'REVERSED';
                 const canMarkPaid = canRecord && ['PENDING', 'OVERDUE', 'PARTIAL', 'FAILED'].includes(contribution.status);
-                const canSelfPay = !canRecord && paymentSettings?.isEnabled && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
-                const canSubmitProof = !canRecord && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
+                const canSelfPay = !canRecord && contribution.memberId === user?.id && ['PENDING', 'OVERDUE', 'PARTIAL'].includes(contribution.status);
+                const hasPendingReport = contribution.payments?.some((payment) => payment.matchStatus === 'AWAITING_CONFIRMATION') ?? false;
+                const hasProcessingPayment = contribution.payments?.some((payment) => payment.matchStatus === 'PROCESSING') ?? false;
                 return (
                   <Card key={contribution.id} className="p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -763,7 +782,7 @@ export const Contributions = () => {
                           {contribution.member?.firstName ?? 'Member'} {contribution.member?.lastName ?? ''}
                         </p>
                       </div>
-                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[contribution.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{contribution.status}</span>
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[contribution.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{statusLabel[contribution.status] ?? contribution.status}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-3 text-sm text-[var(--ds-text-muted)]">
                       <span>{formatMoney(contribution.amount)}</span>
@@ -772,11 +791,15 @@ export const Contributions = () => {
                       <span>{contribution.paymentMethod ?? 'Unpaid'}</span>
                       {contribution.reference ? <span>Ref {contribution.reference}</span> : null}
                     </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-[var(--ds-surface-2)] p-3"><span className="text-[var(--ds-text-muted)]">Paid</span><p className="mt-1 font-bold text-[var(--ds-text)]">{formatMoney(paidAmountFor(contribution))}</p></div><div className="rounded-xl bg-[var(--ds-surface-2)] p-3"><span className="text-[var(--ds-text-muted)]">Still due</span><p className="mt-1 font-bold text-[var(--ds-text)]">{formatMoney(dueAmountFor(contribution))}</p></div></div>
+                    {Number(contribution.penalties ?? 0) > 0 ? <p className="mt-2 text-sm text-rose-700">Penalty included: {formatMoney(contribution.penalties)}</p> : null}
+                    {paymentReviewActions(contribution)}
+                    {contribution.payments?.length ? <details className="mt-3 rounded-xl border border-[var(--ds-border)] p-3"><summary className="cursor-pointer text-sm font-semibold text-[var(--ds-secondary)]">Payments and receipts ({contribution.payments.length})</summary><div className="mt-3 space-y-2">{contribution.payments.map((payment) => <div key={payment.id} className="rounded-lg bg-[var(--ds-surface-2)] p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{formatMoney(payment.amount)} · {payment.paymentMethod ?? 'Payment'}</strong><span>{receiptStatusLabel[payment.matchStatus] ?? 'Payment recorded'}</span></div><p className="mt-1 text-[var(--ds-text-muted)]">{payment.receiptNumber ? `Receipt ${payment.receiptNumber}` : `Reference ${payment.reference}`} · {new Date(payment.recordedAt).toLocaleDateString('en-KE')}</p>{payment.reviewNote ? <p className="mt-1 text-rose-700">Treasurer’s note: {payment.reviewNote}</p> : null}</div>)}</div></details> : null}
                     {contribution.reverseReason ? <p className="mt-2 text-sm text-[var(--ds-text-muted)]">Reason: {contribution.reverseReason}</p> : null}
-                    {canReverse || canMarkPaid || canSelfPay ? (
+                    {canReverse || canMarkPaid || canSelfPay || hasPendingReport || hasProcessingPayment ? (
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {canSelfPay ? <Button disabled={saving} onClick={() => openStkPayment(contribution)} startIcon={<Smartphone className="h-4 w-4" />}>Pay with STK Push</Button> : null}
-                        {canSubmitProof ? <Button variant="outline" disabled={saving} onClick={() => openProofModal(contribution)} startIcon={<MessageSquareQuote className="h-4 w-4" />}>I've paid — submit proof</Button> : null}
+                        {canSelfPay && paymentSettings?.isEnabled ? <Button disabled={saving} onClick={() => openStkPayment(contribution)} startIcon={<Smartphone className="h-4 w-4" />}>Pay with STK Push</Button> : null}
+                        {canSelfPay && !hasPendingReport && !hasProcessingPayment ? <Button variant="outline" onClick={() => openPaymentReport(contribution)}>I’ve paid · send receipt to Treasurer</Button> : hasPendingReport ? <p className="w-full rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Your payment report is waiting for the Treasurer. This contribution is still due until it’s checked.</p> : hasProcessingPayment ? <p className="w-full rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">M-Pesa is still confirming your payment. Wait for the result before sending another receipt.</p> : null}
                         {canMarkPaid ? <Button disabled={saving} onClick={() => void handleMarkPaid(contribution)} startIcon={<CheckCircle2 className="h-4 w-4" />}>Mark member paid</Button> : null}
                         {canReverse ? (
                         <Button variant="outline" disabled={saving} onClick={() => void handleReverse(contribution)} startIcon={<RotateCcw className="h-4 w-4" />}>
@@ -865,36 +888,24 @@ export const Contributions = () => {
           <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={saving} onClick={() => setStkContribution(null)}>Cancel</Button><Button type="submit" loading={saving} disabled={!stkPhone.trim() || Boolean(stkMessage)} startIcon={!saving ? <Smartphone className="h-4 w-4" /> : undefined}>Send STK Push</Button></div>
         </form>
       </Dialog>
-      <Dialog open={Boolean(proofContribution)} title="I've paid — submit proof" description={proofContribution ? `${proofContribution.period ?? 'Contribution'} · ${formatMoney(Number(proofContribution.amount) + Number(proofContribution.penalties ?? 0))}` : undefined} onClose={() => !saving && setProofContribution(null)}>
-        <form className="space-y-4" onSubmit={submitProof}>
-          <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Paste your M-Pesa confirmation SMS (optional)</span>
-            <textarea
-              value={proofSmsText}
-              onChange={(event) => applyProofSms(event.target.value)}
-              rows={3}
-              className="input min-h-20 w-full"
-              placeholder="e.g. QGH7DE2X8R Confirmed. Ksh1,000.00 sent to JANE WANJIKU on 2/10/2026 at 14:32. New M-PESA balance is Ksh450.00."
-            />
-          </label>
-          {proofSmsText && proofReference ? <div className="rounded-[var(--ds-radius-lg)] border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Detected receipt <strong>{proofReference}</strong> and amount <strong>{formatMoney(proofAmount)}</strong> — check them before submitting.</div> : null}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField label="Payment method" value={proofMethod} onChange={(event) => setProofMethod(event.target.value as 'MPESA' | 'BANK' | 'CASH')}>
-              {acceptedProofMethods.includes('MPESA') ? <option value="MPESA">M-Pesa{paymentSettings?.mode === 'PAYBILL' ? ' (PayBill)' : paymentSettings?.mpesaNumber ? ` (to ${paymentSettings.mpesaNumber})` : " (to treasurer's number)"}</option> : null}
-              {acceptedProofMethods.includes('BANK') ? <option value="BANK">Bank transfer{paymentSettings?.bankName ? ` — ${paymentSettings.bankName}` : ''}</option> : null}
-              {acceptedProofMethods.includes('CASH') ? <option value="CASH">Cash handover</option> : null}
-            </SelectField>
-            <TextField label="Amount paid (KES)" type="number" min="0.01" step="0.01" value={proofAmount} onChange={(event) => setProofAmount(event.target.value)} required />
-          </div>
-          <TextField label={proofMethod === 'MPESA' ? 'M-Pesa receipt code' : proofMethod === 'BANK' ? 'Bank transaction reference' : 'Receipt reference (optional)'} value={proofReference} onChange={(event) => setProofReference(event.target.value)} required={proofMethod !== 'CASH'} />
-          {proofMethod === 'BANK' && paymentSettings?.bankAccountNumber ? <div className="rounded-[var(--ds-radius-lg)] bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">Deposit to: <strong>{paymentSettings.bankName ? `${paymentSettings.bankName} — ` : ''}{paymentSettings.bankAccountName || currentOrganization.name}</strong> · Account <strong>{paymentSettings.bankAccountNumber}</strong></div> : null}
-          <TextField label="Note for the treasurer (optional)" value={proofNote} onChange={(event) => setProofNote(event.target.value)} />
-          {paymentSettings?.paymentInstructions ? <div className="rounded-[var(--ds-radius-lg)] border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900"><strong>Treasurer's instructions:</strong> {paymentSettings.paymentInstructions}</div> : null}
-          <div className="rounded-[var(--ds-radius-lg)] bg-[var(--ds-surface-2)] p-3 text-sm text-[var(--ds-text-muted)]">No more screenshots on WhatsApp — your proof goes straight to the treasurer's review queue. They will confirm it against the M-Pesa or bank statement.</div>
-          <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={saving} onClick={() => setProofContribution(null)}>Cancel</Button><Button type="submit" loading={saving} startIcon={!saving ? <MessageSquareQuote className="h-4 w-4" /> : undefined}>Submit payment proof</Button></div>
+      <Dialog open={Boolean(reportPaymentContribution)} title="Tell the Treasurer you’ve paid" description={reportPaymentContribution ? `${reportPaymentContribution.period ?? 'Contribution'} · still due ${formatMoney(dueAmountFor(reportPaymentContribution))}` : undefined} onClose={() => !reportingPayment && setReportPaymentContribution(null)}>
+        <form className="space-y-4" onSubmit={submitPaymentReport}>
+          <p className="text-sm text-[var(--ds-text-muted)]">Add the amount and receipt or transaction reference. The Treasurer will check it against the group’s records. This contribution stays due until confirmed.</p>
+          <TextField label="Amount paid (KES)" type="number" min="0.01" max={reportPaymentContribution ? dueAmountFor(reportPaymentContribution) : undefined} step="0.01" value={reportedAmount} onChange={(event) => setReportedAmount(event.target.value)} required />
+          <SelectField label="How did you pay?" value={reportedMethod} onChange={(event) => setReportedMethod(event.target.value as 'CASH' | 'MPESA' | 'BANK')}>
+            <option value="MPESA">M-Pesa</option><option value="CASH">Cash</option><option value="BANK">Bank transfer</option>
+          </SelectField>
+          <TextField label={reportedMethod === 'CASH' ? 'Receipt number or details' : 'M-Pesa or bank transaction reference'} value={reportedReference} onChange={(event) => setReportedReference(event.target.value)} required minLength={2} />
+          <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={reportingPayment} onClick={() => setReportPaymentContribution(null)}>Cancel</Button><Button type="submit" loading={reportingPayment} disabled={!Number(reportedAmount) || Number(reportedAmount) > (reportPaymentContribution ? dueAmountFor(reportPaymentContribution) : 0) || reportedReference.trim().length < 2}>Send to Treasurer</Button></div>
         </form>
       </Dialog>
-      {proofSuccess ? <div role="status" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-[var(--ds-radius-lg)] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg">{proofSuccess}</div> : null}
+      <Dialog open={Boolean(reviewTarget)} title="Ask member to check payment details" description={reviewTarget ? `${reviewTarget.contribution.member?.firstName ?? 'Member'} · ${formatMoney(reviewTarget.payment.amount)} · ${reviewTarget.payment.receiptNumber ?? reviewTarget.payment.reference}` : undefined} onClose={() => !reviewingPayment && setReviewTarget(null)}>
+        <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void reviewMemberPayment('reject'); }}>
+          <p className="text-sm text-[var(--ds-text-muted)]">Explain what needs checking. The member will see your note and the payment will remain due.</p>
+          <TextField label="What should the member check?" value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} required minLength={3} />
+          <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={reviewingPayment} onClick={() => setReviewTarget(null)}>Cancel</Button><Button type="submit" loading={reviewingPayment} disabled={reviewReason.trim().length < 3}>Send note</Button></div>
+        </form>
+      </Dialog>
     </div>
   );
 };

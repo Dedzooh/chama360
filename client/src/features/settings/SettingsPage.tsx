@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Archive, BellRing, CreditCard, HeartHandshake, Layers3, RefreshCcw, Save, ShieldAlert } from 'lucide-react';
+import { Archive, BellRing, CreditCard, Layers3, RefreshCcw, Save, ShieldAlert } from 'lucide-react';
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
 import { organizationService } from '../../services/organizationService';
 import { getModuleLabel } from '../../config/chamaBlueprint';
@@ -16,11 +16,6 @@ type OrganizationMetadata = {
     accountReference?: string;
     transactionDesc?: string;
     isEnabled?: boolean;
-    acceptedMethods?: Array<'MPESA' | 'BANK' | 'CASH'>;
-    bankName?: string;
-    bankAccountName?: string;
-    bankAccountNumber?: string;
-    paymentInstructions?: string;
   };
   notificationSettings?: {
     sms?: boolean;
@@ -40,15 +35,18 @@ type SettingsSnapshot = {
     accountReference: string;
     transactionDesc: string;
     isEnabled: boolean;
-    acceptedMethods: Array<'MPESA' | 'BANK' | 'CASH'>;
-    bankName: string;
-    bankAccountName: string;
-    bankAccountNumber: string;
-    paymentInstructions: string;
   };
   notificationForm: { sms: boolean; email: boolean; inApp: boolean };
   welfareForm: WelfareRulesConfig;
 };
+
+const organizationStatusLabel = (status: string) => ({
+  DRAFT: 'Setup in progress',
+  ACTIVE: 'Active',
+  SUSPENDED: 'Paused',
+  CLOSED: 'Closed',
+  ARCHIVED: 'Archived',
+} as Record<string, string>)[status] ?? status.toLowerCase().replaceAll('_', ' ');
 
 export const Settings = () => {
   const { currentOrganization, refreshOrganizations } = useOrganizationWorkspace();
@@ -61,11 +59,6 @@ export const Settings = () => {
     accountReference: '',
     transactionDesc: '',
     isEnabled: true,
-    acceptedMethods: ['MPESA', 'BANK', 'CASH'] as Array<'MPESA' | 'BANK' | 'CASH'>,
-    bankName: '',
-    bankAccountName: '',
-    bankAccountNumber: '',
-    paymentInstructions: '',
   });
   const [notificationForm, setNotificationForm] = useState({
     sms: true,
@@ -94,11 +87,6 @@ export const Settings = () => {
       accountReference: metadata.paymentSettings?.accountReference ?? '',
       transactionDesc: metadata.paymentSettings?.transactionDesc ?? '',
       isEnabled: metadata.paymentSettings?.isEnabled ?? true,
-      acceptedMethods: metadata.paymentSettings?.acceptedMethods ?? ['MPESA', 'BANK', 'CASH'],
-      bankName: metadata.paymentSettings?.bankName ?? '',
-      bankAccountName: metadata.paymentSettings?.bankAccountName ?? '',
-      bankAccountNumber: metadata.paymentSettings?.bankAccountNumber ?? '',
-      paymentInstructions: metadata.paymentSettings?.paymentInstructions ?? '',
     });
     setNotificationForm({
       sms: metadata.notificationSettings?.sms ?? true,
@@ -117,11 +105,6 @@ export const Settings = () => {
         accountReference: metadata.paymentSettings?.accountReference ?? '',
         transactionDesc: metadata.paymentSettings?.transactionDesc ?? '',
         isEnabled: metadata.paymentSettings?.isEnabled ?? true,
-        acceptedMethods: metadata.paymentSettings?.acceptedMethods ?? ['MPESA', 'BANK', 'CASH'],
-        bankName: metadata.paymentSettings?.bankName ?? '',
-        bankAccountName: metadata.paymentSettings?.bankAccountName ?? '',
-        bankAccountNumber: metadata.paymentSettings?.bankAccountNumber ?? '',
-        paymentInstructions: metadata.paymentSettings?.paymentInstructions ?? '',
       },
       notificationForm: {
         sms: metadata.notificationSettings?.sms ?? true,
@@ -210,11 +193,6 @@ export const Settings = () => {
             accountNumber: paymentForm.accountNumber.trim() || undefined,
             accountReference: paymentForm.accountReference.trim() || undefined,
             transactionDesc: paymentForm.transactionDesc.trim() || undefined,
-            acceptedMethods: paymentForm.acceptedMethods.length ? paymentForm.acceptedMethods : ['MPESA', 'BANK', 'CASH'],
-            bankName: paymentForm.bankName.trim() || undefined,
-            bankAccountName: paymentForm.bankAccountName.trim() || undefined,
-            bankAccountNumber: paymentForm.bankAccountNumber.trim() || undefined,
-            paymentInstructions: paymentForm.paymentInstructions.trim() || undefined,
           },
           notificationSettings: {
             ...notificationForm,
@@ -245,8 +223,9 @@ export const Settings = () => {
     setError('');
     setMessage('');
     try {
-      await organizationService.updateOrganization(currentOrganization.id, { status });
-      setMessage(`Organization moved to ${status.toLowerCase()}.`);
+      if (status === 'ACTIVE') await organizationService.activateOrganization(currentOrganization.id);
+      else await organizationService.updateOrganization(currentOrganization.id, { status });
+      setMessage(status === 'ACTIVE' ? 'Your Chama is active.' : `Your Chama is now ${organizationStatusLabel(status).toLowerCase()}.`);
       await refreshOrganizations();
     } catch (statusError) {
       setError(statusError instanceof Error ? statusError.message : 'Failed to update status');
@@ -264,7 +243,7 @@ export const Settings = () => {
     setMessage('');
     try {
       await organizationService.updateOrganization(currentOrganization.id, { status });
-      setMessage(`Organization moved to ${status.toLowerCase()}.`);
+      setMessage(`Your Chama is now ${organizationStatusLabel(status).toLowerCase()}.`);
       await refreshOrganizations();
     } catch (statusError) {
       setError(statusError instanceof Error ? statusError.message : 'Failed to update status');
@@ -305,44 +284,26 @@ export const Settings = () => {
         <div className="chama360-module-hero-main">
           <div className="chama360-module-hero-topline">
             <span>Settings</span>
-            <strong>{currentOrganization.status}</strong>
+            <strong>{organizationStatusLabel(currentOrganization.status)}</strong>
           </div>
           <div className="chama360-module-hero-copy">
             <p>{currentOrganization.name}</p>
-            <h1>Organization settings</h1>
-            <small>Update basics, configure payments, review modules, and control lifecycle status.</small>
-          </div>
-          <div className="chama360-module-hero-actions">
-            <button type="button" onClick={() => setActiveSection('overview')} className={activeSection === 'overview' ? 'is-active' : ''}>
-              <Save className="h-4 w-4" />
-              Overview
-            </button>
-            <button type="button" onClick={() => setActiveSection('payments')} className={activeSection === 'payments' ? 'is-active' : ''}>
-              <CreditCard className="h-4 w-4" />
-              Payments
-            </button>
-            <button type="button" onClick={() => setActiveSection('welfare')} className={activeSection === 'welfare' ? 'is-active' : ''}>
-              <HeartHandshake className="h-4 w-4" />
-              Welfare
-            </button>
-            <button type="button" onClick={() => setActiveSection('notifications')} className={activeSection === 'notifications' ? 'is-active' : ''}>
-              <BellRing className="h-4 w-4" />
-              Notifications
-            </button>
+            <h1>Group settings</h1>
+            <small>Update group details, member payment instructions, welfare rules, and notifications.</small>
           </div>
         </div>
         <div className="chama360-module-hero-stats">
           <article>
             <span className="green"><Layers3 className="h-5 w-5" /></span>
-            <p>Modules</p>
+            <p>Group tools</p>
             <strong>{enabledModules.length}</strong>
-            <small>Enabled capabilities</small>
+            <small>Available for members</small>
           </article>
           <article>
             <span className="blue"><CreditCard className="h-5 w-5" /></span>
             <p>Payments</p>
             <strong>{paymentForm.isEnabled ? 'On' : 'Off'}</strong>
-            <small>{paymentForm.mode}</small>
+            <small>{paymentForm.mode === 'MPESA_NUMBER' ? 'Phone number' : 'PayBill'}</small>
           </article>
           <article>
             <span className="gold"><BellRing className="h-5 w-5" /></span>
@@ -415,65 +376,29 @@ export const Settings = () => {
       {activeSection === 'payments' ? <section id="enterprise-settings" className="grid gap-6 lg:grid-cols-2">
         <Card className="space-y-4 p-6 lg:col-span-2">
           <div>
-            <p className="font-semibold text-[var(--ds-secondary)]">Payment settings</p>
-            <p className="text-sm text-[var(--ds-text-muted)]">Save the default payment profile for contributions and reconciliation.</p>
+            <p className="font-semibold text-[var(--ds-secondary)]">Member payment details</p>
+            <p className="text-sm text-[var(--ds-text-muted)]">These are the payment instructions members see when they pay their contributions.</p>
           </div>
           {!paymentForm.isEnabled ? <div className="rounded-[var(--ds-radius-lg)] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">M-Pesa defaults are currently disabled. Enable them below before members can use this payment profile.</div> : null}
-          <SelectField label="Mode" value={paymentForm.mode} onChange={(event) => setPaymentForm((current) => ({ ...current, mode: event.target.value as 'MPESA_NUMBER' | 'PAYBILL' }))}>
-            <option value="MPESA_NUMBER">M-Pesa Number</option>
+          <SelectField label="How should members pay?" value={paymentForm.mode} onChange={(event) => setPaymentForm((current) => ({ ...current, mode: event.target.value as 'MPESA_NUMBER' | 'PAYBILL' }))}>
+            <option value="MPESA_NUMBER">Send money to a phone number</option>
             <option value="PAYBILL">PayBill</option>
           </SelectField>
           {paymentForm.mode === 'MPESA_NUMBER' ? (
-            <TextField label="M-Pesa number" placeholder="2547..." value={paymentForm.mpesaNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, mpesaNumber: event.target.value }))} />
+            <TextField label="M-Pesa phone number" helperText="Enter the number members should send contributions to." placeholder="0712 345 678" value={paymentForm.mpesaNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, mpesaNumber: event.target.value }))} />
           ) : (
-            <TextField label="PayBill number" placeholder="123456" value={paymentForm.paybillNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, paybillNumber: event.target.value }))} />
+            <TextField label="PayBill number" helperText="Enter the group’s registered PayBill number." placeholder="123456" value={paymentForm.paybillNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, paybillNumber: event.target.value }))} />
           )}
           {paymentError ? <p className="text-sm font-semibold text-rose-700" role="alert">{paymentError}</p> : <p className="text-sm text-[var(--ds-text-muted)]">Use the number members will see when making contributions.</p>}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField label="Account number" value={paymentForm.accountNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, accountNumber: event.target.value }))} />
-            <TextField label="Account reference" value={paymentForm.accountReference} onChange={(event) => setPaymentForm((current) => ({ ...current, accountReference: event.target.value }))} />
-          </div>
-          <TextField label="Transaction description" value={paymentForm.transactionDesc} onChange={(event) => setPaymentForm((current) => ({ ...current, transactionDesc: event.target.value }))} />
-          <div>
-            <p className="mb-2 text-sm font-semibold text-[var(--ds-secondary)]">Payment methods members can use</p>
-            <p className="mb-3 text-sm text-[var(--ds-text-muted)]">Only the methods you enable appear to members when they submit a payment. The “I have paid” proof flow accepts exactly these.</p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {([['MPESA', 'M-Pesa'], ['BANK', 'Bank transfer'], ['CASH', 'Cash handover']] as const).map(([method, label]) => {
-                const active = paymentForm.acceptedMethods.includes(method);
-                return (
-                  <label key={method} className={`flex cursor-pointer items-center justify-between gap-3 rounded-[var(--ds-radius-lg)] border px-4 py-3 ${active ? 'border-[var(--ds-primary)] bg-emerald-50' : 'border-[var(--ds-border)] bg-[var(--ds-surface-3)]'}`}>
-                    <span className="text-sm font-semibold text-[var(--ds-secondary)]">{label}</span>
-                    <input
-                      type="checkbox"
-                      checked={active}
-                      onChange={(event) => setPaymentForm((current) => ({ ...current, acceptedMethods: event.target.checked ? [...current.acceptedMethods, method] : current.acceptedMethods.filter((item) => item !== method) }))}
-                    />
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-          {paymentForm.acceptedMethods.includes('BANK') ? (
-            <div className="grid gap-4 rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface-2)] p-4 sm:grid-cols-3">
-              <TextField label="Bank name" value={paymentForm.bankName} onChange={(event) => setPaymentForm((current) => ({ ...current, bankName: event.target.value }))} placeholder="e.g. Equity Bank" />
-              <TextField label="Account name" value={paymentForm.bankAccountName} onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountName: event.target.value }))} />
-              <TextField label="Account number" value={paymentForm.bankAccountNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, bankAccountNumber: event.target.value }))} />
-            </div>
-          ) : null}
-          <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Payment instructions for members (optional)</span>
-            <textarea
-              value={paymentForm.paymentInstructions}
-              onChange={(event) => setPaymentForm((current) => ({ ...current, paymentInstructions: event.target.value }))}
-              rows={3}
-              className="input min-h-20 w-full"
-              placeholder="e.g. Pay to the treasurer's M-Pesa number, then submit your proof here — no WhatsApp messages needed."
-            />
-          </label>
+          {paymentForm.mode === 'PAYBILL' ? <div className="grid gap-4 sm:grid-cols-2">
+            <TextField label="PayBill account number" helperText="Tell members what to enter so their payment can be identified." value={paymentForm.accountNumber} onChange={(event) => setPaymentForm((current) => ({ ...current, accountNumber: event.target.value }))} />
+            <TextField label="Account reference (optional)" helperText="Add a reference members should include with the payment." value={paymentForm.accountReference} onChange={(event) => setPaymentForm((current) => ({ ...current, accountReference: event.target.value }))} />
+          </div> : null}
+          <TextField label="Payment message (optional)" helperText="A short note members will see with these instructions." value={paymentForm.transactionDesc} onChange={(event) => setPaymentForm((current) => ({ ...current, transactionDesc: event.target.value }))} />
           <label className="flex items-center justify-between gap-4 rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] px-4 py-3">
             <div>
               <p className="font-semibold text-[var(--ds-secondary)]">Enable M-Pesa defaults</p>
-              <p className="text-sm text-[var(--ds-text-muted)]">Use these settings across contribution payment flows.</p>
+              <p className="text-sm text-[var(--ds-text-muted)]">Show these details wherever members make a contribution.</p>
             </div>
             <input type="checkbox" checked={paymentForm.isEnabled} onChange={(event) => setPaymentForm((current) => ({ ...current, isEnabled: event.target.checked }))} />
           </label>
@@ -509,7 +434,7 @@ export const Settings = () => {
             />
             <TextField label="Reminder day" type="number" min="1" max="28" value={welfareForm.reminderDay} onChange={(event) => patchWelfareRules({ reminderDay: Number(event.target.value) })} />
           </div>
-          <SelectField label="Approval model" value={welfareForm.approvalMode} onChange={(event) => patchWelfareRules({ approvalMode: event.target.value as WelfareRulesConfig['approvalMode'] })}>
+          <SelectField label="Who reviews welfare claims?" value={welfareForm.approvalMode} onChange={(event) => patchWelfareRules({ approvalMode: event.target.value as WelfareRulesConfig['approvalMode'] })}>
             {WELFARE_APPROVAL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -591,33 +516,34 @@ export const Settings = () => {
         <div className="flex items-start gap-3">
           <ShieldAlert className="mt-1 h-5 w-5 text-rose-700" />
           <div>
-            <p className="text-sm font-bold uppercase tracking-wide text-rose-700">Danger zone</p>
-            <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Organization lifecycle</h2>
-            <p className="mt-1 text-sm text-[var(--ds-text-muted)]">These actions can interrupt access or hide the Chama from normal workflows.</p>
+            <p className="text-sm font-bold uppercase tracking-wide text-rose-700">Important group actions</p>
+            <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Pause or close this Chama</h2>
+            <p className="mt-1 text-sm text-[var(--ds-text-muted)]">Pausing or closing can stop members from using parts of the group workspace. You can review the change before confirming.</p>
           </div>
         </div>
+        {currentOrganization?.status === 'DRAFT' && (currentOrganization.metadata as any)?.setupReadiness?.ready === false ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="font-bold text-amber-950">Finish setting up your Chama</p><p className="mt-1 text-sm text-amber-900">Add the missing rules and group contacts before you activate it: {((currentOrganization.metadata as any).setupReadiness.missing ?? []).join(', ')}.</p><Link className="mt-3 inline-flex font-bold text-[var(--ds-primary)] underline" to="/create-chama/review">Continue setup</Link></div> : null}
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <Button variant="outline" onClick={() => void updateStatus('ACTIVE')} disabled={saving} startIcon={<RefreshCcw className="h-4 w-4" />}>
-            Activate
+            Activate group
           </Button>
           <Button variant="outline" onClick={() => void updateStatus('SUSPENDED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
-            Suspend
+            Pause group
           </Button>
           <Button variant="outline" onClick={() => void updateStatus('CLOSED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
-            Close
+            Close group
           </Button>
           <Button onClick={() => void updateStatus('ARCHIVED')} disabled={saving} startIcon={<Archive className="h-4 w-4" />}>
-            Archive
+            Archive group
           </Button>
         </div>
       </Card> : null}
 
       {activeSection === 'overview' ? <Card className="p-6">
-        <p className="text-sm text-[var(--ds-text-muted)]">Enabled modules</p>
-        <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Current setup</h2>
+        <p className="text-sm text-[var(--ds-text-muted)]">Your Chama tools</p>
+        <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">What this group can use</h2>
         <div className="mt-4">
           {enabledModules.length === 0 ? (
-            <EmptyState title="No modules are currently enabled." description="Enable modules in the wizard or edit them here when the backend supports it." />
+            <EmptyState title="No group tools are enabled yet." description={currentOrganization.status === 'DRAFT' ? 'Choose the tools your group needs in setup before you activate it.' : 'Tools are chosen during setup. Contact CHAMAZ360 support if this active group needs different tools.'} />
           ) : (
             <div className="flex flex-wrap gap-2">
               {enabledModules.map((module) => (
@@ -632,9 +558,9 @@ export const Settings = () => {
 
       <ConfirmDialog
         open={Boolean(pendingStatus)}
-        title={`Move organization to ${pendingStatus?.toLowerCase() ?? 'a new status'}?`}
-        description="This may affect member access, payments, and normal Chama workflows. You can change the status again later."
-        confirmLabel={`Confirm ${pendingStatus?.toLowerCase() ?? 'change'}`}
+        title={`${pendingStatus === 'SUSPENDED' ? 'Pause' : pendingStatus === 'CLOSED' ? 'Close' : 'Archive'} this Chama?`}
+        description="This can limit member access and stop some group activity. Check with your committee before you confirm."
+        confirmLabel={pendingStatus === 'SUSPENDED' ? 'Pause Chama' : pendingStatus === 'CLOSED' ? 'Close Chama' : 'Archive Chama'}
         destructive
         busy={saving}
         onClose={() => setPendingStatus(null)}

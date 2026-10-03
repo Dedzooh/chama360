@@ -13,17 +13,24 @@ const redisConfig = {
   connectTimeout: 10000,
   commandTimeout: 5000,
 };
+const redisClientOptions = {
+  retryDelayOnFailover: 100,
+  maxRetriesPerRequest: 3,
+  lazyConnect: true,
+  keepAlive: 30000,
+  connectTimeout: 10000,
+  commandTimeout: 5000,
+};
+const redisUrl = process.env.REDIS_URL?.trim();
+const redisPasswordOption = redisConfig.password ? { password: redisConfig.password } : {};
 
-export const redis = new Redis({
-  ...redisConfig,
-  password: redisConfig.password || undefined,
-});
+export const redis = redisUrl
+  ? new Redis(redisUrl, { ...redisClientOptions, ...redisPasswordOption, db: parseInt(process.env.REDIS_DB || '0') })
+  : new Redis(redisConfig);
 
-export const queueRedis = new Redis({
-  ...redisConfig,
-  db: parseInt(process.env.REDIS_QUEUE_DB || '1'),
-  password: redisConfig.password || undefined,
-});
+export const queueRedis = redisUrl
+  ? new Redis(redisUrl, { ...redisClientOptions, ...redisPasswordOption, db: parseInt(process.env.REDIS_QUEUE_DB || '1') })
+  : new Redis({ ...redisConfig, db: parseInt(process.env.REDIS_QUEUE_DB || '1') });
 
 redis.on('connect', () => {
   logger.info('Redis connected successfully');

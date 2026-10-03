@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Archive, Mail, RefreshCw, Shield, Trash2, UserCheck, UserPlus, Users } from 'lucide-react';
+import { Archive, Mail, RefreshCw, Search, Shield, Trash2, UserCheck, UserPlus, Users } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { ROUTES } from '../../config/routes';
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
@@ -26,12 +26,7 @@ export const Members = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRoleId, setInviteRoleId] = useState('');
-  // The chama creator is always a member-manager regardless of which officer
-  // role they hold (Treasurer/Chairperson/etc.). Server sends `isOwner` on the
-  // org payload. Chairpersons also manage members (matches the backend's
-  // FOUNDER/CHAIR invite gate).
-  const isCreator = Boolean((currentOrganization as any)?.isOwner);
-  const canManageMembers = isCreator || ['OWNER', 'FOUNDER', 'ADMIN', 'CHAIR'].includes((currentOrganization?.myRole ?? '').toUpperCase());
+  const canManageMembers = ['OWNER', 'FOUNDER', 'ADMIN'].includes((currentOrganization?.myRole ?? '').toUpperCase());
 
   const loadData = async () => {
     if (!currentOrganization?.id) return;
@@ -148,6 +143,10 @@ export const Members = () => {
             <p>Invite members, update roles, and keep access visible for every committee action.</p>
           </div>
           <div className="chama360-module-hero-actions">
+            <a href="#members-roster-mobile">
+              <Search className="h-4 w-4" />
+              Roster
+            </a>
             {canManageMembers ? <a href="#member-invite-mobile">
               <UserPlus className="h-4 w-4" />
               Invite
@@ -340,6 +339,10 @@ export const Members = () => {
             <p>Invite members, change roles, suspend access, and keep the roster current.</p>
           </div>
           <div className="chama360-module-hero-actions">
+            <a href="#members-roster">
+              <Search className="h-4 w-4" />
+              Roster
+            </a>
             {canManageMembers ? <a href="#member-invite">
               <UserPlus className="h-4 w-4" />
               Invite

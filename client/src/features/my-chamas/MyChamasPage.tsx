@@ -4,18 +4,18 @@ import {
   ArrowRight,
   Archive,
   BarChart3,
-  Calendar,
   CheckCircle,
   Heart,
   LayoutGrid,
   List,
-  Megaphone,
   Plus,
   RefreshCw,
   ShieldCheck,
   Star,
   UserPlus,
   Wallet,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { ROUTES } from '../../config/routes';
 import { BrandMark } from '../../components/BrandLogo';
@@ -54,6 +54,7 @@ export const MyChamas = () => {
   });
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'archived'>('all');
   const [selectedPreset, setSelectedPreset] = useState<'all' | 'favorites' | 'recent' | 'savings'>('all');
+  const [balanceHidden, setBalanceHidden] = useState(() => localStorage.getItem('chama360:hide-balances') === 'true');
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveCandidateId, setArchiveCandidateId] = useState<string | null>(null);
 
@@ -163,16 +164,22 @@ export const MyChamas = () => {
 
   const primaryOrganizationId = organizations[0]?.id;
   const managedOrganizationId = organizations.find((organization) => ['FOUNDER', 'OWNER', 'ADMIN'].includes((organization.myRole ?? '').toUpperCase()))?.id;
+  const reviewOrganizationId = organizations.find((organization) => ['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN'].includes((organization.myRole ?? '').toUpperCase()))?.id;
+  const welfareOrganizationId = organizations.find((organization) => organization.enabledModules?.welfare)?.id;
   const quickActions = [
-    { label: 'Record Contribution', to: primaryOrganizationId ? ROUTES.chama.contributions(primaryOrganizationId) : ROUTES.createChama.type, icon: Plus, tone: 'green' },
-    { label: 'Apply Loan', to: primaryOrganizationId ? ROUTES.chama.loans(primaryOrganizationId) : ROUTES.app.joinChama, icon: Wallet, tone: 'blue' },
-    { label: 'Approve Loans', to: primaryOrganizationId ? ROUTES.chama.loans(primaryOrganizationId) : ROUTES.app.myChamas, icon: CheckCircle, tone: 'purple' },
-    { label: 'Welfare Claim', to: primaryOrganizationId ? ROUTES.chama.welfare(primaryOrganizationId) : ROUTES.app.myChamas, icon: Heart, tone: 'pink' },
+    { label: 'Contributions', to: primaryOrganizationId ? ROUTES.chama.contributions(primaryOrganizationId) : ROUTES.createChama.type, icon: Plus, tone: 'green' },
+    { label: 'Loans', to: primaryOrganizationId ? ROUTES.chama.loans(primaryOrganizationId) : ROUTES.app.joinChama, icon: Wallet, tone: 'blue' },
+    ...(reviewOrganizationId ? [{ label: 'Approvals', to: ROUTES.chama.approvals(reviewOrganizationId), icon: CheckCircle, tone: 'purple' }] : []),
+    ...(welfareOrganizationId ? [{ label: 'Welfare', to: ROUTES.chama.welfare(welfareOrganizationId), icon: Heart, tone: 'pink' }] : []),
     { label: managedOrganizationId ? 'Invite Members' : 'Join Chama', to: managedOrganizationId ? ROUTES.chama.members(managedOrganizationId) : ROUTES.app.joinChama, icon: UserPlus, tone: 'green-soft' },
-    { label: 'Schedule Meeting', to: ROUTES.more.meetings, icon: Calendar, tone: 'gold' },
-    { label: 'Announcement', to: ROUTES.app.notifications, icon: Megaphone, tone: 'teal' },
-    { label: 'Reports', to: ROUTES.more.reports, icon: BarChart3, tone: 'blue-soft' },
+    ...(primaryOrganizationId ? [{ label: 'Meetings', to: ROUTES.chama.meetings(primaryOrganizationId), icon: CalendarDays, tone: 'gold' }] : []),
+    ...(primaryOrganizationId ? [{ label: 'Reports', to: ROUTES.chama.reports(primaryOrganizationId), icon: BarChart3, tone: 'blue-soft' }] : []),
   ] as const;
+  const formatBalance = (value: number) => balanceHidden ? 'KES ••••••' : `KES ${value.toLocaleString()}`;
+  const toggleBalanceVisibility = () => setBalanceHidden((hidden) => {
+    localStorage.setItem('chama360:hide-balances', String(!hidden));
+    return !hidden;
+  });
 
   const accountTone = (index: number) => ['emerald', 'gold', 'navy', 'mint'][index % 4];
   const initials = (name: string) =>
@@ -189,17 +196,17 @@ export const MyChamas = () => {
         <div className="chama360-wallet-shine" aria-hidden="true" />
         <div className="chama360-wallet-topline">
           <span>Wallet Overview</span>
-          <button type="button" aria-label="Toggle balance visibility">
-            <Wallet className="h-5 w-5" />
+          <button type="button" onClick={toggleBalanceVisibility} aria-label={balanceHidden ? 'Show balances' : 'Hide balances'} aria-pressed={balanceHidden}>
+            {balanceHidden ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
           </button>
         </div>
         <p className="chama360-wallet-label">Total Balance</p>
-        <h2>KES {stats.walletTotal.toLocaleString()}</h2>
+        <h2>{formatBalance(stats.walletTotal)}</h2>
         <div className="chama360-wallet-breakdown">
           <div>
             <Wallet className="h-5 w-5" />
             <span>Savings</span>
-            <strong>KES {stats.walletTotal.toLocaleString()}</strong>
+            <strong>{formatBalance(stats.walletTotal)}</strong>
           </div>
           <div>
             <ShieldCheck className="h-5 w-5" />
@@ -222,7 +229,7 @@ export const MyChamas = () => {
       <section className="chama360-section">
         <div className="chama360-section-title">
           <h2>Quick Actions</h2>
-          <Link to={ROUTES.app.mobile}>Edit</Link>
+          <span className="text-xs text-[var(--ds-text-muted)]">Common tasks</span>
         </div>
         <div className="chama360-action-grid">
           {quickActions.map((item) => {
@@ -330,7 +337,7 @@ export const MyChamas = () => {
                       <em className={archived ? 'archived' : ''}>{getChamaStatusLabel(organization.status)}</em>
                     </span>
                     <span className="chama360-account-meta">
-                      <strong>KES {walletBalance.toLocaleString()}</strong>
+                      <strong>{formatBalance(walletBalance)}</strong>
                       <span>{memberCount} members</span>
                     </span>
                     <ArrowRight className="h-5 w-5" />
@@ -390,7 +397,7 @@ export const MyChamas = () => {
             </div>
             <div>
               <span>Wallet total</span>
-              <strong>KES {stats.walletTotal.toLocaleString()}</strong>
+              <strong>{formatBalance(stats.walletTotal)}</strong>
               <small>{stats.favorites} pinned accounts</small>
             </div>
           </div>
@@ -471,7 +478,7 @@ export const MyChamas = () => {
                     <div className="flex items-start justify-between gap-3">
                       <Link to={ROUTES.chama.dashboard(organization.id)} onClick={() => recordRecent(organization.id)} className="min-w-0 flex-1">
                         <p className="text-xs uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">{organization.organizationType}</p>
-                        <h2 className="mt-2 truncate text-xl font-black text-[var(--ds-secondary)]">{organization.name}</h2>
+                    <h2 className="mt-2 truncate text-xl font-black text-[var(--ds-secondary)]">{organization.name}</h2>
                       </Link>
                       <button type="button" onClick={() => toggleFavorite(organization.id)} className="chama360-wide-icon-button" aria-label="Toggle favorite">
                         <Star className={`h-4 w-4 ${favorite ? 'fill-amber-400 text-amber-500' : 'text-slate-300'}`} />
@@ -485,7 +492,7 @@ export const MyChamas = () => {
                       </div>
                       <div className="rounded-2xl bg-[var(--ds-surface-2)] px-3 py-2">
                         <p className="text-xs text-[var(--ds-text-muted)]">Wallet</p>
-                        <p className="mt-1 font-bold text-[var(--ds-text)]">KES {walletBalance.toLocaleString()}</p>
+                        <p className="mt-1 font-bold text-[var(--ds-text)]">{formatBalance(walletBalance)}</p>
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -532,7 +539,7 @@ export const MyChamas = () => {
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-[var(--ds-text-muted)]">
                         <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">{organization.organizationType}</span>
                         <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">{memberCount} members</span>
-                        <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">KES {walletBalance.toLocaleString()}</span>
+                        <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">{formatBalance(walletBalance)}</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">

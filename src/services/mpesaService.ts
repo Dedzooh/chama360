@@ -397,7 +397,6 @@ export class MpesaService {
         const memberPhone = this.normalizePhoneNumber(String(contribution?.member?.phone ?? ''));
         const receivedPhone = this.normalizePhoneNumber(String(phoneNumber ?? ''));
         const expectedAmount = Math.round(Number(transaction.amount));
-        const expectedContributionAmount = contribution ? Math.round(Number(contribution.amount)) : NaN;
         const duplicateReceipt = mpesaReceiptNumber
           ? await prisma.transaction.findFirst({
               where: {
@@ -415,8 +414,7 @@ export class MpesaService {
           contribution && transaction.fromMemberId !== contribution.memberId ? 'Callback member does not match the contribution member' : null,
           contribution && transaction.chamaId !== contribution.chamaId ? 'Callback Chama does not match the contribution Chama' : null,
           contribution && transaction.organizationId !== contribution.organizationId ? 'Callback organization does not match the contribution organization' : null,
-          contribution && expectedAmount !== expectedContributionAmount ? 'Initiated amount does not match the current contribution amount' : null,
-          !Number.isFinite(callbackAmount) || callbackAmount !== expectedAmount || callbackAmount !== expectedContributionAmount ? `Callback amount does not match expected contribution amount KES ${expectedContributionAmount}` : null,
+          !Number.isFinite(callbackAmount) || callbackAmount !== expectedAmount ? `Callback amount does not match the initiated amount KES ${expectedAmount}` : null,
           !receivedPhone || receivedPhone !== expectedPhone || receivedPhone !== memberPhone ? 'Callback phone number does not match the paying member' : null,
           !mpesaReceiptNumber ? 'M-Pesa receipt number is missing' : null,
           duplicateReceipt ? 'M-Pesa receipt number has already been used by another completed transaction' : null,
@@ -429,6 +427,7 @@ export class MpesaService {
               status: TransactionStatus.RECONCILIATION_REQUIRED,
               metadata: {
                 ...metadata,
+                organizationId: transaction.organizationId,
                 resultCode: ResultCode,
                 resultDescription: ResultDesc,
                 callbackPayload: callbackData,
@@ -472,6 +471,7 @@ export class MpesaService {
             amount: Number(transaction.amount),
             transactionRef: mpesaReceiptNumber,
             phoneNumber: phoneNumber,
+            existingTransactionId: transaction.id,
           });
         } catch (reconciliationError) {
           await prisma.transaction.update({
@@ -619,7 +619,7 @@ export class MpesaService {
     const receipt = data.TransID.toUpperCase();
     const idempotencyKey = `C2B:${receipt}`;
     const existing = await prisma.transaction.findUnique({ where: { idempotencyKey } });
-    if (existing) return { matched: true, duplicate: true, message: 'Already processed' };
+    if (existing) return { matched: existing.status === TransactionStatus.COMPLETED, duplicate: true, message: existing.status === TransactionStatus.COMPLETED ? 'Already processed' : 'Already received for Treasurer review' };
 
     const organizations = await prisma.organization.findMany({
       where: { status: 'ACTIVE' },
@@ -646,10 +646,72 @@ export class MpesaService {
       if (member) { matchedOrganization = organization; matchedMember = member; break; }
     }
 
+    // Join the member's earlier report to the official PayBill confirmation.
+    // Exact receipt, amount, payer phone and member identity are required.
+    if (paybillOrganization?.chama?.id) {
+      const reports = await prisma.transaction.findMany({
+        where: { organizationId: paybillOrganization.id, type: 'CONTRIBUTION', status: TransactionStatus.PENDING, metadata: { path: ['paymentApproval', 'status'], equals: 'PENDING' } },
+        include: { fromMember: { select: { id: true, phone: true } } },
+        take: 500,
+      });
+      const reportsForReceipt = reports.filter((report: any) => String(report.metadata?.transactionRef ?? '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === receipt);
+      const normalizedPayerPhone = this.normalizePhoneNumber(data.MSISDN);
+      const exactReports = reportsForReceipt.filter((report: any) =>
+        Math.round(Number(report.amount) * 100) === Math.round(Number(data.TransAmount) * 100)
+        && (matchedMember?.userId === report.fromMemberId || this.normalizePhoneNumber(String(report.fromMember?.phone ?? '')) === normalizedPayerPhone)
+        && (!matchedMember || matchedMember.userId === report.fromMemberId),
+      );
+
+      if (exactReports.length === 1) {
+        const report = exactReports[0] as any;
+        const reportMetadata = report.metadata as any;
+        const contribution = await prisma.contribution.findFirst({ where: { id: reportMetadata.contributionId, organizationId: paybillOrganization.id, memberId: report.fromMemberId } });
+        if (contribution && ['PENDING', 'PARTIAL', 'OVERDUE'].includes(contribution.status)) {
+          const priorPayments = await prisma.transaction.aggregate({ where: { organizationId: paybillOrganization.id, type: 'CONTRIBUTION', fromMemberId: report.fromMemberId, status: TransactionStatus.COMPLETED, metadata: { path: ['contributionId'], equals: contribution.id } }, _sum: { amount: true } });
+          const required = Number(contribution.amount) + Number(contribution.penalties ?? 0);
+          const totalPaid = Number(priorPayments._sum.amount ?? 0) + Number(data.TransAmount);
+          if (totalPaid <= required + 0.001) {
+            const paidAt = new Date();
+            await prisma.$transaction(async (tx) => {
+              const claimed = await tx.transaction.updateMany({ where: { id: report.id, status: TransactionStatus.PENDING, metadata: { path: ['paymentApproval', 'status'], equals: 'PENDING' } }, data: { status: TransactionStatus.COMPLETED } });
+              if (claimed.count !== 1) throw new Error('Member payment report was already claimed');
+              const fullyPaid = totalPaid + 0.001 >= required;
+              const updated = await tx.contribution.update({ where: { id: contribution.id }, data: {
+                status: fullyPaid ? 'PAID' : 'PARTIAL', paymentMethod: PaymentMethod.MPESA,
+                reference: receipt, transactionRef: receipt, paidDate: paidAt, paidAt: fullyPaid ? paidAt : null,
+                recordedById: report.fromMemberId,
+              } });
+              await tx.transaction.update({ where: { id: report.id }, data: {
+                reference: `MPESA-C2B-${receipt}`, idempotencyKey,
+                metadata: { ...reportMetadata, contributionId: contribution.id, paymentMethod: 'MPESA', transactionRef: receipt, mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: false, reconciliationOutcome: 'AUTO_MATCHED_TO_MEMBER_REPORT', reconciledAt: paidAt.toISOString(), paymentApproval: { ...reportMetadata.paymentApproval, status: 'APPROVED', automatic: true, reviewedAt: paidAt.toISOString(), reviewNote: 'Matched to the M-Pesa record by receipt, amount and payer phone.' } },
+              } });
+              if (fullyPaid) await allocatePaidContribution(tx, updated);
+              await tx.organizationWallet.upsert({ where: { organizationId: paybillOrganization!.id }, create: { organizationId: paybillOrganization!.id, balance: data.TransAmount, currency: 'KES' }, update: { balance: { increment: data.TransAmount } } });
+              await tx.organizationAuditLog.create({ data: { organizationId: paybillOrganization!.id, userId: report.fromMemberId, action: 'UPDATE', entityType: 'ContributionPaymentSubmission', entityId: report.id, oldValues: report as any, newValues: { contribution: updated, receipt, source: 'C2B_PAYBILL' }, metadata: { operation: 'AUTO_MATCHED_MEMBER_REPORT_TO_MPESA_STATEMENT', receipt, contributionId: contribution.id } } });
+              await tx.notification.updateMany({ where: { organizationId: paybillOrganization!.id, dedupeKey: { startsWith: `member-payment:${report.id}:` } }, data: { title: 'Payment matched automatically', message: `M-Pesa receipt ${receipt} matched the member report. No manual check is needed.`, priority: 'INFO' } });
+              await tx.notification.create({ data: { dedupeKey: `paybill-confirmation:${receipt}`, recipientId: report.fromMemberId, organizationId: paybillOrganization!.id, chamaId: paybillOrganization!.chama!.id, type: 'GENERAL_UPDATE', priority: 'INFO', title: fullyPaid ? 'M-Pesa payment confirmed' : 'M-Pesa part-payment confirmed', message: `Your M-Pesa receipt ${receipt} matched the payment you reported. ${fullyPaid ? 'Your contribution is paid.' : 'A balance is still due.'}`, channels: { create: [{ type: 'IN_APP', address: report.fromMemberId }] } } });
+            }, { isolationLevel: 'Serializable' });
+            return { matched: true, message: 'Accepted and matched to the member payment report' };
+          }
+        }
+      }
+
+      if (reportsForReceipt.length > 0) {
+        const candidate = reportsForReceipt.length === 1 ? reportsForReceipt[0] as any : null;
+        try {
+          await prisma.transaction.create({ data: { chamaId: paybillOrganization.chama.id, organizationId: paybillOrganization.id, type: 'CONTRIBUTION', amount: data.TransAmount, fromMemberId: candidate?.fromMemberId ?? matchedMember?.userId ?? null, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: TransactionStatus.RECONCILIATION_REQUIRED, metadata: { contributionId: candidate?.metadata?.contributionId, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: true, reason: 'MEMBER_REPORT_MISMATCH', reconciliationReasons: ['The M-Pesa receipt matches a member report, but the amount, payer phone or member does not match exactly.'] } } });
+        } catch (error: any) {
+          if (error?.code === 'P2002') return { matched: false, duplicate: true, message: 'Already received for Treasurer review' };
+          throw error;
+        }
+        return { matched: false, message: 'Receipt needs Treasurer review because it does not exactly match the member report' };
+      }
+    }
+
     if (!matchedOrganization || !matchedMember || !matchedOrganization.chama?.id) {
       if (paybillOrganization?.chama?.id) {
         try {
-          await prisma.transaction.create({ data: { chamaId: paybillOrganization.chama.id, organizationId: paybillOrganization.id, type: 'CONTRIBUTION', amount: data.TransAmount, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: 'PENDING', metadata: { paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: true, reason: 'MEMBER_REFERENCE_NOT_MATCHED' } } });
+          await prisma.transaction.create({ data: { chamaId: paybillOrganization.chama.id, organizationId: paybillOrganization.id, type: 'CONTRIBUTION', amount: data.TransAmount, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: TransactionStatus.RECONCILIATION_REQUIRED, metadata: { paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: true, reason: 'MEMBER_REFERENCE_NOT_MATCHED', reconciliationReasons: ['Member account reference did not match an active member.'] } } });
         } catch (error: any) {
           if (error?.code === 'P2002') return { matched: false, duplicate: true, message: 'Already received for manual reconciliation' };
           throw error;
@@ -664,8 +726,9 @@ export class MpesaService {
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
     });
     if (!contribution) {
+      await prisma.transaction.create({ data: { chamaId: matchedOrganization.chama.id, organizationId: matchedOrganization.id, type: 'CONTRIBUTION', amount: data.TransAmount, fromMemberId: matchedMember.userId, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: TransactionStatus.RECONCILIATION_REQUIRED, metadata: { paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: true, reason: 'NO_OUTSTANDING_CONTRIBUTION', reconciliationReasons: ['Member reference matched, but the member has no contribution due.'] } } });
       logger.warn('PayBill member matched but has no outstanding contribution', { receipt, organizationId: matchedOrganization.id, memberId: matchedMember.userId });
-      return { matched: false, message: 'Accepted for manual reconciliation' };
+      return { matched: false, message: 'Accepted for Treasurer review' };
     }
 
     const paidAt = new Date();
@@ -675,17 +738,21 @@ export class MpesaService {
     });
     const totalReceived = Number(priorPayments._sum.amount ?? 0) + Number(data.TransAmount);
     const amountRequired = Number(contribution.amount) + Number(contribution.penalties ?? 0);
+    if (totalReceived > amountRequired + 0.001) {
+      await prisma.transaction.create({ data: { chamaId: matchedOrganization.chama.id, organizationId: matchedOrganization.id, type: 'CONTRIBUTION', amount: data.TransAmount, fromMemberId: matchedMember.userId, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: TransactionStatus.RECONCILIATION_REQUIRED, metadata: { contributionId: contribution.id, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: true, reason: 'PAYMENT_EXCEEDS_BALANCE', reconciliationReasons: [`Payment exceeds the outstanding balance of KES ${Math.max(0, amountRequired - Number(priorPayments._sum.amount ?? 0)).toFixed(2)}.`] } } });
+      return { matched: false, message: 'Accepted for Treasurer review because it is above the remaining balance' };
+    }
     const fullyPaid = totalReceived >= amountRequired;
-    const contributionAmount = fullyPaid && totalReceived > Number(contribution.amount) ? totalReceived : Number(contribution.amount);
+    const contributionAmount = Number(contribution.amount);
     try {
       await prisma.$transaction(async (tx) => {
-        const reservation = await tx.transaction.create({ data: { chamaId: matchedOrganization.chama!.id, organizationId: matchedOrganization.id, type: 'CONTRIBUTION', amount: data.TransAmount, fromMemberId: matchedMember.userId, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: 'PENDING', metadata: { contributionId: contribution.id, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL' } } });
-        const updated = await tx.contribution.update({ where: { id: contribution.id }, data: { amount: contributionAmount, status: fullyPaid ? 'PAID' : 'PARTIAL', paymentMethod: 'MPESA', reference: receipt, transactionRef: receipt, paidAt: fullyPaid ? paidAt : null, paidDate: paidAt, recordedById: matchedMember.userId } });
+        const reservation = await tx.transaction.create({ data: { chamaId: matchedOrganization!.chama!.id, organizationId: matchedOrganization!.id, type: 'CONTRIBUTION', amount: data.TransAmount, fromMemberId: matchedMember!.userId, reference: `MPESA-C2B-${receipt}`, idempotencyKey, status: 'PENDING', metadata: { contributionId: contribution.id, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL' } } });
+        const updated = await tx.contribution.update({ where: { id: contribution.id }, data: { amount: contributionAmount, status: fullyPaid ? 'PAID' : 'PARTIAL', paymentMethod: 'MPESA', reference: receipt, transactionRef: receipt, paidAt: fullyPaid ? paidAt : null, paidDate: paidAt, recordedById: matchedMember!.userId } });
         await allocatePaidContribution(tx, updated);
-        await tx.organizationWallet.upsert({ where: { organizationId: matchedOrganization.id }, create: { organizationId: matchedOrganization.id, balance: data.TransAmount, currency: 'KES' }, update: { balance: { increment: data.TransAmount } } });
+        await tx.organizationWallet.upsert({ where: { organizationId: matchedOrganization!.id }, create: { organizationId: matchedOrganization!.id, balance: data.TransAmount, currency: 'KES' }, update: { balance: { increment: data.TransAmount } } });
         await tx.transaction.update({ where: { id: reservation.id }, data: { status: 'COMPLETED', metadata: { contributionId: contribution.id, paymentMethod: 'MPESA', mpesaReceiptNumber: receipt, billRefNumber: data.BillRefNumber, phoneNumber: data.MSISDN, transactionDate: data.TransTime, source: 'C2B_PAYBILL', reconciliationRequired: false, reconciledAt: paidAt } } });
-        await tx.organizationAuditLog.create({ data: { organizationId: matchedOrganization.id, userId: matchedMember.userId, action: 'UPDATE', entityType: 'Contribution', entityId: contribution.id, oldValues: contribution as any, newValues: updated as any, metadata: { operation: 'AUTOMATIC_PAYBILL_RECONCILIATION', receipt, accountReference: data.BillRefNumber } } });
-        await tx.notification.create({ data: { dedupeKey: `paybill-confirmation:${receipt}`, recipientId: matchedMember.userId, organizationId: matchedOrganization.id, chamaId: matchedOrganization.chama!.id, type: 'GENERAL_UPDATE', priority: 'INFO', title: fullyPaid ? 'PayBill contribution received' : 'Partial PayBill contribution received', message: fullyPaid ? `Your M-Pesa payment of KES ${Number(data.TransAmount).toLocaleString()} was received and allocated. Receipt: ${receipt}.` : `KES ${Number(data.TransAmount).toLocaleString()} was received. Your contribution remains partially paid. Receipt: ${receipt}.`, status: 'DELIVERED', sentAt: paidAt, channels: { create: [{ type: 'IN_APP', address: matchedMember.userId, status: 'DELIVERED', deliveredAt: paidAt }] } } });
+        await tx.organizationAuditLog.create({ data: { organizationId: matchedOrganization!.id, userId: matchedMember!.userId, action: 'UPDATE', entityType: 'Contribution', entityId: contribution.id, oldValues: contribution as any, newValues: updated as any, metadata: { operation: 'AUTOMATIC_PAYBILL_RECONCILIATION', receipt, accountReference: data.BillRefNumber } } });
+        await tx.notification.create({ data: { dedupeKey: `paybill-confirmation:${receipt}`, recipientId: matchedMember!.userId, organizationId: matchedOrganization!.id, chamaId: matchedOrganization!.chama!.id, type: 'GENERAL_UPDATE', priority: 'INFO', title: fullyPaid ? 'PayBill contribution received' : 'Partial PayBill contribution received', message: fullyPaid ? `Your M-Pesa payment of KES ${Number(data.TransAmount).toLocaleString()} was received and allocated. Receipt: ${receipt}.` : `KES ${Number(data.TransAmount).toLocaleString()} was received. Your contribution remains partially paid. Receipt: ${receipt}.`, status: 'DELIVERED', sentAt: paidAt, channels: { create: [{ type: 'IN_APP', address: matchedMember!.userId, status: 'DELIVERED', deliveredAt: paidAt }] } } });
       });
     } catch (error: any) {
       if (error?.code === 'P2002') return { matched: true, duplicate: true, message: 'Already processed' };
@@ -704,6 +771,7 @@ export class MpesaService {
     amount: number;
     transactionRef: string;
     phoneNumber: string;
+    existingTransactionId: string;
   }): Promise<void> {
     try {
       // Get contribution details
@@ -727,6 +795,7 @@ export class MpesaService {
           paymentMethod: PaymentMethod.MPESA,
           transactionRef: data.transactionRef,
           paidDate: new Date().toISOString(),
+          existingTransactionId: data.existingTransactionId,
         },
         contribution.memberId // System reconciliation uses member's ID
       );
@@ -823,7 +892,7 @@ export class MpesaService {
         take: 100, // Process in batches
       });
 
-      const successful = 0;
+      let successful = 0;
       let failed = 0;
 
       for (const transaction of pendingTransactions) {

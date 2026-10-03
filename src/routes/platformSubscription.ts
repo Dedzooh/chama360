@@ -31,6 +31,41 @@ router.get('/access', asyncHandler(async (req: Request, res: Response) => {
   res.json({ isPlatformAdmin: true, platformRole: req.user?.platformRole ?? null });
 }));
 
+router.get('/operations', asyncHandler(async (_req: Request, res: Response) => {
+  const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
+  const now = new Date();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [scheduledTasks, failedJobs, callbacks, failedJobCount, callbackErrorCount, staleCallbackCount] = await Promise.all([
+    prisma.scheduledTaskHealth.findMany({ orderBy: { taskName: 'asc' } }),
+    prisma.backgroundJob.findMany({
+      where: { status: 'FAILED' },
+      select: { id: true, type: true, error: true, retryCount: true, maxRetries: true, startedAt: true, completedAt: true, updatedAt: true },
+      orderBy: { completedAt: 'desc' },
+      take: 50,
+    }),
+    prisma.mpesaCallbackInbox.findMany({
+      where: { OR: [
+        { status: 'PENDING', lastError: { not: null } },
+        { status: 'PENDING', receivedAt: { lt: staleBefore }, nextAttemptAt: { lt: now } },
+        { status: 'PROCESSING', updatedAt: { lt: staleBefore } },
+      ] },
+      select: { id: true, checkoutRequestId: true, status: true, attempts: true, lastError: true, nextAttemptAt: true, receivedAt: true, processedAt: true, updatedAt: true },
+      orderBy: { receivedAt: 'asc' },
+      take: 50,
+    }),
+    prisma.backgroundJob.count({ where: { status: 'FAILED', updatedAt: { gte: since } } }),
+    prisma.mpesaCallbackInbox.count({ where: { status: 'PENDING', lastError: { not: null } } }),
+    prisma.mpesaCallbackInbox.count({ where: { OR: [{ status: 'PENDING', receivedAt: { lt: staleBefore }, nextAttemptAt: { lt: now } }, { status: 'PROCESSING', updatedAt: { lt: staleBefore } }] } }),
+  ]);
+  res.json({
+    timestamp: new Date().toISOString(),
+    summary: { failedJobsLast24Hours: failedJobCount, callbacksWithErrors: callbackErrorCount, staleCallbacks: staleCallbackCount },
+    scheduledTasks,
+    failedJobs,
+    callbacks,
+  });
+}));
+
 router.get('/platform-admins', requirePlatformOwner, asyncHandler(async (_req: Request, res: Response) => {
   const admins = await prisma.user.findMany({
     where: { platformRole: { not: null } },

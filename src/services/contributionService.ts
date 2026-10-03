@@ -345,20 +345,20 @@ export class ContributionService {
         type: TransactionType.CONTRIBUTION,
         status: TransactionStatus.COMPLETED,
       },
-      select: { amount: true, metadata: true },
+      select: { id: true, amount: true, metadata: true },
     });
     const amountAlreadyPaid = completedPayments.reduce((total: number, payment: any) => {
       const metadata = payment.metadata as { contributionId?: string } | null;
-      return metadata?.contributionId === contribution.id ? total + Number(payment.amount) : total;
+      return metadata?.contributionId === contribution.id && payment.id !== data.existingTransactionId ? total + Number(payment.amount) : total;
     }, 0);
-    const amountDue = Number(contribution.amount) - Number(contribution.penalties);
+    let amountDue = Number(contribution.amount) + Number(contribution.penalties);
     const remainingAmount = Math.max(0, amountDue - amountAlreadyPaid);
 
     if (finalAmount > remainingAmount) {
       throw new BadRequestError(`Payment exceeds the remaining contribution balance of ${remainingAmount.toFixed(2)}`);
     }
 
-    const newStatus: ContributionStatus = finalAmount >= remainingAmount
+    let newStatus: ContributionStatus = finalAmount >= remainingAmount
       ? ContributionStatus.PAID
       : ContributionStatus.PARTIAL;
 
@@ -371,18 +371,25 @@ export class ContributionService {
       // Calculate penalties based on Chama rules
       const penaltyAmount = await this.calculatePenaltyAmount(contribution.chamaId, contribution.id);
       penalties = penaltyAmount;
+      amountDue = Number(contribution.amount) + penalties;
+      const recalculatedRemaining = Math.max(0, amountDue - amountAlreadyPaid);
+      if (finalAmount > recalculatedRemaining) throw new BadRequestError(`Payment exceeds the remaining contribution balance of ${recalculatedRemaining.toFixed(2)}`);
+      newStatus = finalAmount >= recalculatedRemaining ? ContributionStatus.PAID : ContributionStatus.PARTIAL;
     }
 
     // Create idempotency key for transaction
     const idempotencyKey = `CONTRIBUTION:${contribution.id}:${data.transactionRef || uuidv4()}`;
 
     // Check for duplicate transaction
-    const existingTransaction = await prisma.transaction.findUnique({
-      where: { idempotencyKey },
-    });
+    const existingTransaction = data.existingTransactionId
+      ? await prisma.transaction.findUnique({ where: { id: data.existingTransactionId } })
+      : await prisma.transaction.findUnique({ where: { idempotencyKey } });
 
-    if (existingTransaction) {
+    if (existingTransaction && !data.existingTransactionId) {
       throw new ConflictError('Payment already recorded with this transaction reference');
+    }
+    if (data.existingTransactionId && (!existingTransaction || existingTransaction.status !== TransactionStatus.COMPLETED || existingTransaction.fromMemberId !== contribution.memberId || existingTransaction.type !== TransactionType.CONTRIBUTION)) {
+      throw new ConflictError('Confirmed M-Pesa payment record could not be finalized');
     }
 
     // Update contribution and post an idempotent ledger entry in a single database transaction
@@ -391,6 +398,7 @@ export class ContributionService {
         where: { id: data.contributionId },
         data: {
           status: newStatus,
+          paidAt: newStatus === ContributionStatus.PAID ? (data.paidDate ? new Date(data.paidDate) : new Date()) : null,
           paidDate: data.paidDate ? new Date(data.paidDate) : new Date(),
           paymentMethod: data.paymentMethod,
           transactionRef: data.transactionRef,
@@ -399,7 +407,23 @@ export class ContributionService {
         },
       });
 
-      const ledgerTransaction = await LedgerService.recordContributionPayment(
+      const ledgerTransaction = data.existingTransactionId
+        ? await tx.transaction.update({ where: { id: data.existingTransactionId }, data: {
+            organizationId: contribution.organizationId ?? null,
+            amount: finalAmount,
+            reference: `MPESA-${data.transactionRef}`,
+            idempotencyKey,
+            status: TransactionStatus.COMPLETED,
+            metadata: {
+              contributionId: contribution.id,
+              paymentMethod: data.paymentMethod,
+              transactionRef: data.transactionRef,
+              mpesaReceiptNumber: data.transactionRef,
+              currencyConversion: conversionMetadata,
+              recordedBy,
+            },
+          } })
+        : await LedgerService.recordContributionPayment(
         tx,
         {
           organizationId: contribution.organizationId ?? null,
@@ -1083,7 +1107,7 @@ export class ContributionService {
     convertedCurrency: string;
     exchangeRate: number;
   }> {
-    const exchangeRate = data.exchangeRate;
+    let exchangeRate = data.exchangeRate;
 
     // If exchange rate not provided, fetch from external API (placeholder)
     if (!exchangeRate) {

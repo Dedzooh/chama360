@@ -204,7 +204,7 @@ export class AuditLogService {
     const validatedQuery = auditLogQuerySchema.parse(query);
 
     const where = {
-      ...((validatedQuery.action != null) && { action: validatedQuery.action }),
+      ...(validatedQuery.action && { action: validatedQuery.action }),
       ...(validatedQuery.entityType && { entityType: validatedQuery.entityType }),
       ...(validatedQuery.entityId && { entityId: validatedQuery.entityId }),
       ...(validatedQuery.userId && { userId: validatedQuery.userId }),

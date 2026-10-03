@@ -16,7 +16,7 @@ router.post(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, (req.user.id));
+    await getOrganizationAccess(id, (req.user.id as string));
 
     const currentOrganization = await requireOrganizationStatus(id);
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
@@ -29,7 +29,7 @@ router.post(
     const claim = await db.welfareClaim.create({
       data: {
         organizationId: id,
-        requestedById: (req.user.id),
+        requestedById: (req.user.id as string),
         memberId: payload.memberId,
         type: payload.claimType as WelfareClaimType,
         claimType: payload.claimType as WelfareClaimType,
@@ -38,12 +38,13 @@ router.post(
         description: payload.reason,
         documents: payload.documents,
         supportingDocuments: payload.documents.length ? payload.documents : undefined,
+        statusHistory: [{ from: null, to: 'PENDING', by: req.user.id as string, at: new Date().toISOString(), comment: 'Claim submitted' }],
       },
     });
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id),
+      userId: (req.user.id as string),
       action: 'CREATE',
       entityType: 'WelfareClaim',
       entityId: claim.id,
@@ -64,10 +65,10 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, (req.user.id));
-
+    const membership = await getOrganizationAccess(id, (req.user.id as string));
+    const canReview = isWelfareApprover(membership);
     const claims = await db.welfareClaim.findMany({
-      where: { organizationId: id },
+      where: canReview ? { organizationId: id } : { organizationId: id, requestedById: req.user.id as string },
       include: { requestedBy: true, reviewedBy: true, approvals: { include: { approver: true }, orderBy: { createdAt: 'asc' } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -88,7 +89,7 @@ router.patch(
     }
 
     const { id, claimId } = req.params as { id: string; claimId: string };
-    const access = await getOrganizationAccess(id, (req.user.id));
+    const access = await getOrganizationAccess(id, (req.user.id as string));
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can approve welfare claims');
     }
@@ -127,25 +128,29 @@ router.patch(
         totalPossibleApprovers: approvalPolicy.totalPossibleApprovers,
       });
       const shouldApprove = approvalPolicy.autoApproveWithinLimits || outcome.approved;
+        const history = Array.isArray(current.statusHistory) ? current.statusHistory as any[] : [];
       const updated = await tx.welfareClaim.update({
         where: { id: claimId },
-        data: shouldApprove ? {
+        data: {
+          statusHistory: [...history, { from: current.status, to: shouldApprove ? WelfareClaimStatus.APPROVED : current.status, by: req.user!.id, at: new Date().toISOString(), comment }],
+          ...(shouldApprove ? {
           status: WelfareClaimStatus.APPROVED,
           amountApproved: current.amountRequested,
           reviewedById: req.user!.id,
           reviewedAt: new Date(),
-        } : {
+          } : {
           reviewedById: req.user!.id,
           reviewedAt: new Date(),
+          }),
         },
-        include: { approvals: true },
+        include: { approvals: { include: { approver: true }, orderBy: { createdAt: 'asc' } } },
       });
       return { claim: updated, approvalOutcome: outcome };
     });
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id),
+      userId: (req.user.id as string),
       action: 'UPDATE',
       entityType: 'WelfareClaim',
       entityId: claimId,
@@ -177,7 +182,7 @@ router.patch(
       throw new BadRequestError('User not authenticated');
     }
 
-    const actingUserId = req.user.id;
+    const actingUserId = req.user.id as string;
     const { id, claimId } = req.params as { id: string; claimId: string };
     const access = await getOrganizationAccess(id, actingUserId);
     if (!isFinanceManager(access)) {
@@ -185,7 +190,7 @@ router.patch(
     }
 
     const { comment } = welfareTransitionSchema.parse(req.body);
-    const existing = await db.welfareClaim.findUnique({ where: { id: claimId } });
+    const existing = await db.welfareClaim.findUnique({ where: { id: claimId }, include: { approvals: true } });
     if (!existing || existing.organizationId !== id) {
       throw new NotFoundError('Welfare claim not found');
     }
@@ -237,6 +242,7 @@ router.patch(
           paidAt: new Date(),
           reviewedById: existing.reviewedById ?? actingUserId,
           amountApproved: existing.amountApproved ?? existing.amountRequested,
+          statusHistory: [...(Array.isArray(existing.statusHistory) ? existing.statusHistory as any[] : []), { from: existing.status, to: WelfareClaimStatus.PAID, by: actingUserId, at: new Date().toISOString(), comment }],
         },
       });
 
@@ -298,30 +304,43 @@ router.patch(
     }
 
     const { id, claimId } = req.params as { id: string; claimId: string };
-    const access = await getOrganizationAccess(id, (req.user.id));
+    const access = await getOrganizationAccess(id, (req.user.id as string));
     if (!isWelfareApprover(access)) {
       throw new ForbiddenError('Only Chairperson or Admin can reject welfare claims');
     }
 
     const { comment } = welfareTransitionSchema.parse(req.body);
-    const existing = await db.welfareClaim.findUnique({ where: { id: claimId } });
+    const existing = await db.welfareClaim.findUnique({ where: { id: claimId }, include: { approvals: { include: { approver: true }, orderBy: { createdAt: 'asc' } } } });
     if (!existing || existing.organizationId !== id) {
       throw new NotFoundError('Welfare claim not found');
     }
     if (existing.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be rejected');
+    if (existing.requestedById === req.user.id) throw new ForbiddenError('A member cannot reject their own welfare claim');
+    if (existing.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
 
-    const claim = await db.welfareClaim.update({
-      where: { id: claimId },
-      data: {
-        status: WelfareClaimStatus.REJECTED,
-        reviewedById: (req.user.id),
-        reviewedAt: new Date(),
-      },
+    const claim = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
+      const current = await tx.welfareClaim.findUnique({ where: { id: claimId }, include: { approvals: true } });
+      if (!current || current.organizationId !== id) throw new NotFoundError('Welfare claim not found');
+      if (current.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be rejected');
+      if (current.requestedById === req.user!.id) throw new ForbiddenError('A member cannot reject their own welfare claim');
+      if (current.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
+      await tx.welfareClaimApproval.create({ data: { claimId, approverId: req.user!.id, decision: 'REJECTED', comment } });
+      const history = Array.isArray(current.statusHistory) ? current.statusHistory as any[] : [];
+      return tx.welfareClaim.update({
+        where: { id: claimId },
+        data: {
+          status: WelfareClaimStatus.REJECTED,
+          reviewedById: (req.user!.id as string),
+          reviewedAt: new Date(),
+          statusHistory: [...history, { from: current.status, to: WelfareClaimStatus.REJECTED, by: req.user!.id, at: new Date().toISOString(), comment }],
+        },
+        include: { approvals: { include: { approver: true }, orderBy: { createdAt: 'asc' } } },
+      });
     });
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id),
+      userId: (req.user.id as string),
       action: 'UPDATE',
       entityType: 'WelfareClaim',
       entityId: claimId,

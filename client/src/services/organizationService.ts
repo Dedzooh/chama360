@@ -27,7 +27,6 @@ export interface OrganizationDetail extends OrganizationSummary {
   members?: OrganizationMemberRecord[];
   myRole?: string;
   myRoleLabel?: string;
-  isOwner?: boolean;
 }
 
 export interface OrganizationMemberRecord {
@@ -77,50 +76,6 @@ export interface UpdateMemberInput {
   status?: MemberStatus;
 }
 
-export interface PaymentProofRecord {
-  id: string;
-  contributionId?: string;
-  amount: number;
-  paymentMethod: string;
-  reference?: string | null;
-  paidAt?: string | null;
-  note?: string | null;
-  submittedAt: string;
-  member?: { id: string; firstName?: string; lastName?: string; email?: string; phone?: string } | null;
-}
-
-/**
- * Parse a pasted M-Pesa confirmation SMS into payment-proof fields.
- * Mirrors src/utils/mpesaSmsParser.ts on the backend.
- */
-export function parseMpesaSmsClient(text: string): { receipt: string; amount: number; paidAt?: string } | null {
-  if (!text || text.trim().length < 10) return null;
-  const receiptMatch = text.match(/\b([A-Z0-9]{8,12})\b\s*Confirmed/i) ?? text.match(/\b([A-Z0-9]{10,12})\b/);
-  const amountMatch = text.match(/(?:Ksh|KES|kes)\s*([\d,]+(?:\.\d{1,2})?)/i);
-  if (!receiptMatch || !amountMatch) return null;
-  const amount = Number(amountMatch[1].replace(/,/g, ''));
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  let paidAt: string | undefined;
-  const dateMatch = text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
-  if (dateMatch) {
-    const [, day = '1', month = '1', yearRaw = ''] = dateMatch;
-    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw || '1970';
-    let hour = 12;
-    let minute = 0;
-    const timeMatch = text.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i);
-    if (timeMatch) {
-      hour = Number(timeMatch[1]);
-      minute = Number(timeMatch[2]);
-      const suffix = timeMatch[4]?.toUpperCase();
-      if (suffix === 'PM' && hour < 12) hour += 12;
-      if (suffix === 'AM' && hour === 12) hour = 0;
-    }
-    const date = new Date(Number(year), Number(month) - 1, Number(day), hour, minute);
-    if (!Number.isNaN(date.getTime())) paidAt = date.toISOString();
-  }
-  return { receipt: receiptMatch[1].toUpperCase(), amount, paidAt };
-}
-
 export interface ContributionRecord {
   id: string;
   memberId: string;
@@ -139,6 +94,19 @@ export interface ContributionRecord {
   reverseReason?: string | null;
   reversedAt?: string | null;
   penalties?: number;
+  payments?: Array<{
+    id: string;
+    amount: number;
+    status: string;
+    reference: string;
+    receiptNumber?: string | null;
+    paymentMethod?: string | null;
+    recordedAt: string;
+    matchStatus: 'MATCHED' | 'RECORDED' | 'NEEDS_REVIEW' | 'FAILED' | 'PROCESSING' | 'AWAITING_CONFIRMATION' | 'REJECTED';
+    submittedAt?: string | null;
+    reviewedAt?: string | null;
+    reviewNote?: string | null;
+  }>;
   allocations?: Array<{ id: string; period: string; amount: number; monthlyAmount: number; allocatedAt: string }>;
   createdAt?: string;
   updatedAt?: string;
@@ -168,6 +136,7 @@ export interface ContributionSummary {
   pending: number;
   reversed?: number;
   creditBalance?: number;
+  outstandingAmount?: number;
 }
 
 export type WelfareClaimStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PARTIALLY_APPROVED' | 'PAID' | 'CANCELLED';
@@ -217,6 +186,20 @@ export interface WelfareClaimRecord {
       email: string;
     } | null;
   }>;
+  statusHistory?: Array<{ from?: string | null; to: string; by: string; at: string; comment?: string | null }>;
+}
+
+export interface DisputeRecord {
+  id: string;
+  category: string;
+  relatedEntityType?: 'LOAN' | 'WELFARE_CLAIM' | null;
+  relatedEntityId?: string | null;
+  description: string;
+  status: 'OPEN' | 'UNDER_REVIEW' | 'VOTING' | 'RESOLVED' | 'CLOSED';
+  resolution?: { note?: string; updatedBy?: string; updatedAt?: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  activity: Array<{ status: string; note?: string; at: string; by: string }>;
 }
 
 export interface InvestmentAsset {
@@ -301,7 +284,7 @@ export const organizationService = {
 
   getOrganization: async (id: string): Promise<OrganizationDetail> => {
     const response = await api.get(`/organizations/${id}`);
-    return normalizeOrganization({ ...response.data.organization, myRole: response.data.myRole, myRoleLabel: response.data.myRoleLabel, isOwner: response.data.isOwner });
+    return normalizeOrganization({ ...response.data.organization, myRole: response.data.myRole, myRoleLabel: response.data.myRoleLabel });
   },
 
   createOrganization: async (input: CreateOrganizationInput): Promise<OrganizationDetail> => {
@@ -375,6 +358,7 @@ export const organizationService = {
       ...contribution,
       amount: Number(contribution.amount ?? 0),
       penalties: Number(contribution.penalties ?? 0),
+      payments: (contribution.payments ?? []).map((payment: any) => ({ ...payment, amount: Number(payment.amount ?? 0) })),
       allocations: (contribution.allocations ?? []).map((allocation: any) => ({ ...allocation, amount: Number(allocation.amount), monthlyAmount: Number(allocation.monthlyAmount) })),
     }));
   },
@@ -387,6 +371,7 @@ export const organizationService = {
       pending: Number(response.data.pending ?? 0),
       reversed: Number(response.data.reversed ?? 0),
       creditBalance: Number(response.data.creditBalance ?? 0),
+      outstandingAmount: Number(response.data.outstandingAmount ?? 0),
     };
   },
 
@@ -421,6 +406,7 @@ export const organizationService = {
       interestRate: Number(loan.interestRate ?? 0),
       repaymentPeriodMonths: loan.repaymentPeriodMonths !== undefined && loan.repaymentPeriodMonths !== null ? Number(loan.repaymentPeriodMonths) : null,
       guarantorsData: loan.guarantorsData ?? loan.guarantors ?? [],
+      decisionReason: loan.decisionReason ?? null,
     }));
   },
 
@@ -436,6 +422,7 @@ export const organizationService = {
       interestRate: Number(loan.interestRate ?? 0),
       repaymentPeriodMonths: loan.repaymentPeriodMonths !== undefined && loan.repaymentPeriodMonths !== null ? Number(loan.repaymentPeriodMonths) : null,
       guarantorsData: loan.guarantorsData ?? loan.guarantors ?? [],
+      decisionReason: loan.decisionReason ?? null,
     };
   },
 
@@ -461,6 +448,11 @@ export const organizationService = {
 
   rejectLoan: async (organizationId: string, loanId: string) => {
     const response = await api.patch(`/organizations/${organizationId}/loans/${loanId}/reject`);
+    return response.data.loan as Loan;
+  },
+
+  submitLoanDecision: async (organizationId: string, loanId: string, action: 'approve' | 'reject', reason: string) => {
+    const response = await api.patch(`/organizations/${organizationId}/loans/${loanId}/${action}`, { reason });
     return response.data.loan as Loan;
   },
 
@@ -499,6 +491,21 @@ export const organizationService = {
     }));
   },
 
+  listDisputes: async (organizationId: string): Promise<DisputeRecord[]> => {
+    const response = await api.get(`/organizations/${organizationId}/disputes`);
+    return response.data.disputes ?? [];
+  },
+
+  createDispute: async (organizationId: string, payload: { category: string; relatedEntityType?: 'LOAN' | 'WELFARE_CLAIM'; relatedEntityId?: string; description: string }): Promise<DisputeRecord> => {
+    const response = await api.post(`/organizations/${organizationId}/disputes`, payload);
+    return response.data.dispute as DisputeRecord;
+  },
+
+  updateDisputeStatus: async (organizationId: string, disputeId: string, status: 'UNDER_REVIEW' | 'VOTING' | 'RESOLVED' | 'CLOSED', resolution: string): Promise<DisputeRecord> => {
+    const response = await api.patch(`/organizations/${organizationId}/disputes/${disputeId}/status`, { status, resolution });
+    return response.data.dispute as DisputeRecord;
+  },
+
   listFinancialExceptions: async (organizationId: string) => {
     const response = await api.get(`/organizations/${organizationId}/financial-exceptions`);
     return response.data.exceptions as Array<{
@@ -508,6 +515,10 @@ export const organizationService = {
       status: string;
       amount: number | null;
       reference: string;
+      phoneNumber?: string | null;
+      contributionId?: string | null;
+      mpesaReceiptNumber?: string | null;
+      isActionable?: boolean;
       member?: { id: string; firstName: string; lastName: string; email: string } | null;
       reason: string;
       createdAt: string;
@@ -538,13 +549,13 @@ export const organizationService = {
     return response.data as { usedBytes: number; documentCount: number };
   },
 
-  approveWelfareClaim: async (organizationId: string, claimId: string) => {
-    const response = await api.patch(`/organizations/${organizationId}/welfare/claims/${claimId}/approve`);
+  approveWelfareClaim: async (organizationId: string, claimId: string, comment?: string) => {
+    const response = await api.patch(`/organizations/${organizationId}/welfare/claims/${claimId}/approve`, comment ? { comment } : {});
     return response.data.claim as WelfareClaimRecord;
   },
 
-  rejectWelfareClaim: async (organizationId: string, claimId: string) => {
-    const response = await api.patch(`/organizations/${organizationId}/welfare/claims/${claimId}/reject`);
+  rejectWelfareClaim: async (organizationId: string, claimId: string, comment?: string) => {
+    const response = await api.patch(`/organizations/${organizationId}/welfare/claims/${claimId}/reject`, comment ? { comment } : {});
     return response.data.claim as WelfareClaimRecord;
   },
 
@@ -651,39 +662,14 @@ export const organizationService = {
     return response.data.contribution as ContributionRecord;
   },
 
-  submitPaymentProof: async (organizationId: string, contributionId: string, payload: { paymentMethod: 'MPESA' | 'BANK' | 'CASH'; amount?: number; reference?: string; paidAt?: string; note?: string }) => {
-    const response = await api.post(`/organizations/${organizationId}/contributions/${contributionId}/payment-proof`, payload);
+  submitContributionPayment: async (organizationId: string, contributionId: string, payload: { amount: number; paymentMethod: 'CASH' | 'MPESA' | 'BANK'; reference: string; paidAt?: string }) => {
+    const response = await api.post(`/organizations/${organizationId}/contributions/${contributionId}/payment-submissions`, payload);
+    return response.data as { payment: { id: string; amount: number; status: string; reference: string; paymentMethod: string }; message: string };
+  },
+
+  reviewContributionPayment: async (organizationId: string, contributionId: string, paymentId: string, action: 'approve' | 'reject', reason?: string) => {
+    const response = await api.patch(`/organizations/${organizationId}/contributions/${contributionId}/payment-submissions/${paymentId}/${action}`, { reason });
     return response.data as { message: string };
-  },
-
-  listPaymentProofs: async (organizationId: string) => {
-    const response = await api.get(`/organizations/${organizationId}/contributions/payment-proofs`);
-    return (response.data.proofs ?? []) as PaymentProofRecord[];
-  },
-
-  approvePaymentProof: async (organizationId: string, proofId: string) => {
-    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/${proofId}/approve`, {});
-    return response.data.contribution as ContributionRecord;
-  },
-
-  rejectPaymentProof: async (organizationId: string, proofId: string, reason?: string) => {
-    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/${proofId}/reject`, { reason });
-    return response.data as { message: string };
-  },
-
-  reconcileStatementPreview: async (organizationId: string, statement: string, format: 'auto' | 'mpesa' | 'csv' = 'auto') => {
-    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/reconcile`, { statement, format, mode: 'preview' });
-    return response.data as {
-      rows: number;
-      matched: number;
-      matches: Array<{ proofId: string; confidence: 'EXACT' | 'AMOUNT_DATE' | 'AMOUNT_ONLY'; row: { date?: string; amount: number; reference?: string; details?: string }; rowIndex: number }>;
-      unmatchedRows: Array<{ date?: string; amount: number; reference?: string; details?: string }>;
-    };
-  },
-
-  reconcileStatementApply: async (organizationId: string, statement: string, format: 'auto' | 'mpesa' | 'csv' = 'auto') => {
-    const response = await api.post(`/organizations/${organizationId}/contributions/payment-proofs/reconcile`, { statement, format, mode: 'apply' });
-    return response.data as { rows: number; matched: number; approved: number };
   },
 
   listAuditLogs: async (organizationId: string): Promise<OrganizationAuditLogRecord[]> => {

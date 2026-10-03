@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { CheckCircle2, CircleSlash, Eye, RefreshCw, Send, Wallet } from 'lucide-react';
+import { CheckCircle2, CircleSlash, Eye, RefreshCw, Send, Wallet, Flag } from 'lucide-react';
 import { useParams, Link } from 'react-router-dom';
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
 import { organizationService } from '../../services/organizationService';
 import type { Loan, LoanSummary } from '../../types';
-import { Badge, Button, Card, EmptyState, MetricCard, SelectField, TextField } from '../../design-system';
+import { Badge, Button, Card, EmptyState, SelectField, TextField } from '../../design-system';
 import { ROUTES } from '../../config/routes';
 import { useAuthStore } from '../../store/authStore';
 
@@ -25,6 +25,23 @@ const statusTone: Record<string, string> = {
   ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   PAID: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   DEFAULTED: 'bg-slate-100 text-slate-600 border-slate-200',
+};
+
+const statusLabel: Record<string, string> = {
+  PENDING: 'Waiting for review',
+  APPROVED: 'Approved · awaiting payout',
+  REJECTED: 'Not approved',
+  ACTIVE: 'Repayments in progress',
+  PAID: 'Paid off',
+  DEFAULTED: 'In default',
+};
+
+const guarantorStatusLabel: Record<string, string> = {
+  PENDING: 'Needs response',
+  ACTIVE: 'Accepted',
+  DECLINED: 'Declined',
+  RELEASED: 'Released',
+  CLAIMED: 'Claimed',
 };
 
 const roleUpper = (value?: string) => (value ?? '').toUpperCase();
@@ -51,18 +68,22 @@ export const Loans = () => {
   const [repaymentAmount, setRepaymentAmount] = useState('');
   const [repaymentMethod, setRepaymentMethod] = useState('CASH');
   const [repaymentReference, setRepaymentReference] = useState('');
+  const [decisionReason, setDecisionReason] = useState('');
+  const [disputeDraft, setDisputeDraft] = useState('');
+  const [disputeMessage, setDisputeMessage] = useState('');
 
   const members = currentOrganization?.members ?? [];
   const loanRules = (currentOrganization && 'settings' in currentOrganization ? currentOrganization.settings?.loanRules : undefined) as Record<string, any> | undefined;
   const requiredGuarantors = getRequiredGuarantorCount(loanRules);
   const maxLoanAmount = Number(loanRules?.maxLoanAmount ?? 0);
   const borrowerId = memberId || user?.id || '';
-  const guarantorOptions = members.filter((member) => (member.userId ?? member.id) !== borrowerId);
+  const guarantorOptions = members.filter((member) => member.status === 'ACTIVE' && (member.userId ?? member.id) !== borrowerId);
   const selectedGuarantors = guarantors.filter((guarantorId) => guarantorId !== borrowerId);
   const isReadOnly = ['CLOSED', 'ARCHIVED'].includes(roleUpper(currentOrganization?.status));
   const canApply = !isReadOnly && selectedGuarantors.length >= requiredGuarantors;
   const canApprove = ['OWNER', 'FOUNDER', 'CHAIR', 'ADMIN'].includes(roleUpper(currentOrganization?.myRole));
   const canFinance = ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'].includes(roleUpper(currentOrganization?.myRole));
+  const canApplyForOthers = ['OWNER', 'FOUNDER', 'ADMIN'].includes(roleUpper(currentOrganization?.myRole));
 
   const loadData = async () => {
     if (!currentOrganization?.id) return;
@@ -119,20 +140,34 @@ export const Loans = () => {
 
   const reviewLoan = async (loan: Loan, action: 'approve' | 'reject') => {
     if (!currentOrganization?.id) return;
+    const reason = decisionReason.trim();
+    if (reason.length < 3) { setError('Enter a short reason for the loan decision.'); return; }
     setSaving(true);
     setError(null);
     try {
       if (action === 'approve') {
-        await organizationService.approveLoan(currentOrganization.id, loan.id);
+        await organizationService.submitLoanDecision(currentOrganization.id, loan.id, action, reason);
       } else {
-        await organizationService.rejectLoan(currentOrganization.id, loan.id);
+        await organizationService.submitLoanDecision(currentOrganization.id, loan.id, action, reason);
       }
+      setDecisionReason('');
+      setError('');
       await loadData();
     } catch (reviewError) {
       setError(reviewError instanceof Error ? reviewError.message : 'Failed to review loan');
     } finally {
       setSaving(false);
     }
+  };
+
+  const submitLoanDispute = async (loan: Loan) => {
+    if (!currentOrganization?.id || !disputeDraft.trim()) return;
+    setSaving(true); setError(null); setDisputeMessage('');
+    try {
+      await organizationService.createDispute(currentOrganization.id, { category: 'LOAN', relatedEntityType: 'LOAN', relatedEntityId: loan.id, description: disputeDraft.trim() });
+      setDisputeDraft(''); setDisputeMessage('Dispute submitted. Your Chairperson or Treasurer can review its progress.');
+    } catch (disputeError) { setError(disputeError instanceof Error ? disputeError.message : 'Could not submit this dispute.'); }
+    finally { setSaving(false); }
   };
 
   const disburseLoan = async (loan: Loan) => {
@@ -196,7 +231,7 @@ export const Loans = () => {
   const currentDetail = selectedLoan ?? loans.find((loan) => loan.id === loanId) ?? null;
 
   return (
-    <div className="space-y-6 chama360-workspace-page">
+    <div className="space-y-6 chama360-workspace-page chama360-loans">
       <section className="chama360-module-hero chama360-module-hero-loans">
         <div className="chama360-module-hero-main">
           <div className="chama360-module-hero-topline">
@@ -249,15 +284,8 @@ export const Loans = () => {
 
       {error ? <Card className="border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">{error}</Card> : null}
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <MetricCard title="Total" value={loading ? '...' : (summary?.total ?? 0).toString()} caption="Loan requests" tone="emerald" icon={<Wallet className="h-5 w-5" />} />
-        <MetricCard title="Pending" value={loading ? '...' : (summary?.pending ?? 0).toString()} caption="Awaiting review" tone="warning" icon={<Badge tone="warning">Review</Badge>} />
-        <MetricCard title="Disbursed" value={loading ? '...' : (summary?.active ?? 0).toString()} caption="Current loans" tone="success" icon={<Badge tone="success">Active</Badge>} />
-        <MetricCard title="Outstanding" value={loading ? '...' : (summary?.outstanding ?? 0).toString()} caption="Remaining balance" tone="info" icon={<Badge tone="info">Balance</Badge>} />
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card className="p-6">
+      <section className="loan-workspace-grid grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card className="loan-list-panel p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-[var(--ds-text-muted)]">Loans</p>
@@ -283,7 +311,7 @@ export const Loans = () => {
                 const myGuarantee = loan.guarantors?.find((guarantor) => guarantor.memberId === user?.id);
                 const pendingGuarantees = loan.guarantors?.filter((guarantor) => guarantor.status === 'PENDING').length ?? 0;
                 return (
-                  <Card key={loan.id} className="p-4">
+                  <Card key={loan.id} className={`loan-record-card loan-record-card-${loan.status.toLowerCase()} p-4`}>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="font-semibold text-[var(--ds-secondary)]">{loanName}</p>
@@ -291,7 +319,7 @@ export const Loans = () => {
                           {loan.borrower?.firstName ?? 'Member'} {loan.borrower?.lastName ?? ''}
                         </p>
                       </div>
-                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[loan.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{loan.status}</span>
+                      <span className={`loan-status loan-status-${loan.status.toLowerCase()} inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[loan.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{statusLabel[loan.status] ?? loan.status}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-3 text-sm text-[var(--ds-text-muted)]">
                       <span>Requested {formatMoney(loan.amountRequested)}</span>
@@ -299,7 +327,7 @@ export const Loans = () => {
                       <span>{loan.interestRate}% interest</span>
                       {loan.repaymentPeriodMonths ? <span>{loan.repaymentPeriodMonths} months</span> : null}
                       <span>Balance {formatMoney(loan.balance)}</span>
-                      {loan.guarantors?.length ? <span>{pendingGuarantees} guarantee request{pendingGuarantees === 1 ? '' : 's'} pending</span> : null}
+                      {loan.guarantors?.length ? <span>{pendingGuarantees} guarantor{pendingGuarantees === 1 ? '' : 's'} still need to respond</span> : null}
                     </div>
                     {myGuarantee?.status === 'PENDING' ? (
                       <div className="mt-3 rounded-[var(--ds-radius-lg)] border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -313,18 +341,15 @@ export const Loans = () => {
                         </Button>
                       </Link>
                       {canApprove && loan.status === 'PENDING' ? (
-                        <>
-                          <Button disabled={saving} onClick={() => void reviewLoan(loan, 'approve')} startIcon={<CheckCircle2 className="h-4 w-4" />}>
-                            Approve
-                          </Button>
-                          <Button variant="outline" disabled={saving} onClick={() => void reviewLoan(loan, 'reject')} startIcon={<CircleSlash className="h-4 w-4" />}>
-                            Reject
-                          </Button>
-                        </>
+                        <div className="grid w-full gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                          <TextField label="Decision reason (required)" value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} />
+                          <Button disabled={saving || decisionReason.trim().length < 3} onClick={() => void reviewLoan(loan, 'approve')} startIcon={<CheckCircle2 className="h-4 w-4" />}>Approve</Button>
+                          <Button variant="outline" disabled={saving || decisionReason.trim().length < 3} onClick={() => void reviewLoan(loan, 'reject')} startIcon={<CircleSlash className="h-4 w-4" />}>Reject</Button>
+                        </div>
                       ) : null}
                       {canFinance && loan.status === 'APPROVED' ? (
                         <Button variant="outline" disabled={saving} onClick={() => void disburseLoan(loan)} startIcon={<Wallet className="h-4 w-4" />}>
-                          Disburse
+                          Record payout
                         </Button>
                       ) : null}
                       {myGuarantee?.status === 'PENDING' ? (
@@ -345,56 +370,55 @@ export const Loans = () => {
           </div>
         </Card>
 
-        <div className="space-y-6">
-          <Card id="loan-application" className="p-6">
-            <p className="text-sm text-[var(--ds-text-muted)]">New application</p>
-            <h2 className="text-xl font-black text-[var(--ds-secondary)]">Apply for loan</h2>
+        <div className="loan-side-panel space-y-6">
+          <Card id="loan-application" className="loan-application-card scroll-mt-24 overflow-hidden p-6">
+            <p className="text-sm text-[var(--ds-text-muted)]">New request</p>
+            <h2 className="text-xl font-black text-[var(--ds-secondary)]">Apply for a loan</h2>
             {isReadOnly ? <p className="mt-2 text-sm text-amber-700">This Chama is read-only. Loan applications are disabled.</p> : null}
             <p className="mt-2 text-sm text-[var(--ds-text-muted)]">
-              Chama rules require {requiredGuarantors} guarantor{requiredGuarantors === 1 ? '' : 's'}
-              {maxLoanAmount > 0 ? ` and cap loans at ${formatMoney(maxLoanAmount)}.` : '.'}
+              Start with the amount and purpose. {requiredGuarantors > 0 ? `Choose at least ${requiredGuarantors} active member${requiredGuarantors === 1 ? '' : 's'} to guarantee repayment.` : 'No guarantors are required by your Chama rules.'}
+              {maxLoanAmount > 0 ? ` The maximum loan is ${formatMoney(maxLoanAmount)}.` : ''}
             </p>
+            <ol className="loan-steps mt-5 grid gap-2 sm:grid-cols-3">
+              <li className="loan-step"><span className="loan-step-number">01</span><strong>Make a request</strong><span>Enter the amount and what it’s for.</span></li>
+              <li className="loan-step"><span className="loan-step-number">02</span><strong>Get guarantees</strong><span>Selected members accept before payout.</span></li>
+              <li className="loan-step"><span className="loan-step-number">03</span><strong>Committee review</strong><span>Track the decision and repayments here.</span></li>
+            </ol>
             <form onSubmit={submitLoan} className="mt-5 space-y-4">
-              <SelectField label="Member" value={memberId} onChange={(event) => setMemberId(event.target.value)}>
-                <option value="">Self / current member</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.userId ?? member.id}>
-                    {member.user?.firstName} {member.user?.lastName}
-                  </option>
-                ))}
-              </SelectField>
+              {canApplyForOthers ? (
+                <SelectField label="Apply for member" value={memberId} onChange={(event) => { setMemberId(event.target.value); setGuarantors((selected) => selected.filter((id) => id !== event.target.value)); }} helperText="Leave as yourself to apply for your own loan.">
+                  <option value="">Myself</option>
+                  {members.filter((member) => member.status === 'ACTIVE').map((member) => (
+                    <option key={member.id} value={member.userId ?? member.id}>
+                      {member.user?.firstName} {member.user?.lastName}
+                    </option>
+                  ))}
+                </SelectField>
+              ) : (
+                <div className="rounded-[var(--ds-radius-lg)] bg-[var(--ds-surface-2)] p-3 text-sm"><span className="text-[var(--ds-text-muted)]">Applying as </span><strong className="text-[var(--ds-secondary)]">{user?.firstName} {user?.lastName}</strong></div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
-                <TextField label="Amount requested" type="number" min="0" max={maxLoanAmount > 0 ? maxLoanAmount : undefined} step="0.01" value={amountRequested} onChange={(event) => setAmountRequested(event.target.value)} />
-                <TextField label="Interest rate %" type="number" min="0" step="0.01" value={interestRate} onChange={(event) => setInterestRate(event.target.value)} />
+                <TextField label="How much do you need? (KES)" type="number" min="0.01" max={maxLoanAmount > 0 ? maxLoanAmount : undefined} step="0.01" value={amountRequested} onChange={(event) => setAmountRequested(event.target.value)} required helperText={maxLoanAmount > 0 ? `Chama limit: ${formatMoney(maxLoanAmount)}` : undefined} />
+                <TextField label="Interest rate (%)" type="number" min="0" step="0.01" value={interestRate} onChange={(event) => setInterestRate(event.target.value)} required helperText="As set in your Chama loan agreement." />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <TextField label="Repayment months" type="number" min="1" step="1" value={repaymentPeriodMonths} onChange={(event) => setRepaymentPeriodMonths(event.target.value)} />
-                <TextField label="Purpose" value={purpose} onChange={(event) => setPurpose(event.target.value)} />
+                <TextField label="Repayment period (months)" type="number" min="1" max="60" step="1" value={repaymentPeriodMonths} onChange={(event) => setRepaymentPeriodMonths(event.target.value)} required />
+                <TextField label="What is the loan for?" value={purpose} onChange={(event) => setPurpose(event.target.value)} required />
               </div>
-              <SelectField
-                label="Guarantors"
-                value={guarantors[0] ?? ''}
-                onChange={(event) => setGuarantors(event.target.value ? [event.target.value] : [])}
-                helperText="Pick one or more guarantors using the multi-select below."
-              >
-                <option value="">Select guarantor</option>
-                {guarantorOptions.map((member) => (
-                  <option key={member.id} value={member.userId ?? member.id}>
-                    {member.user?.firstName} {member.user?.lastName}
-                  </option>
-                ))}
-              </SelectField>
-              <select multiple value={guarantors} onChange={(event) => setGuarantors(Array.from(event.target.selectedOptions).map((option) => option.value))} className="input h-32 w-full">
-                {guarantorOptions.map((member) => (
-                  <option key={member.id} value={member.userId ?? member.id}>
-                    {member.user?.firstName} {member.user?.lastName}
-                  </option>
-                ))}
-              </select>
-              {selectedGuarantors.length < requiredGuarantors ? (
-                <p className="text-sm font-medium text-amber-700">
-                  Select {requiredGuarantors - selectedGuarantors.length} more guarantor{requiredGuarantors - selectedGuarantors.length === 1 ? '' : 's'} to meet Chama rules.
-                </p>
+              {requiredGuarantors > 0 ? (
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-semibold text-[var(--ds-secondary)]">Choose guarantors <span className="font-normal text-[var(--ds-text-muted)]">(at least {requiredGuarantors})</span></legend>
+                  {guarantorOptions.length ? guarantorOptions.map((member) => {
+                    const id = member.userId ?? member.id;
+                    return (
+                      <label key={member.id} className="loan-guarantor-option flex min-h-11 cursor-pointer items-center gap-3 rounded-[var(--ds-radius-md)] border border-[var(--ds-border)] bg-[var(--ds-surface)] px-3 py-2 text-sm">
+                        <input type="checkbox" checked={selectedGuarantors.includes(id)} onChange={(event) => setGuarantors((selected) => event.target.checked ? [...new Set([...selected, id])] : selected.filter((value) => value !== id))} />
+                        <span>{member.user?.firstName} {member.user?.lastName}</span>
+                      </label>
+                    );
+                  }) : <p className="rounded-[var(--ds-radius-md)] bg-amber-50 p-3 text-sm text-amber-800">No other active members can guarantee this loan yet.</p>}
+                  <p className="text-sm text-[var(--ds-text-muted)]">{selectedGuarantors.length} selected · {selectedGuarantors.length >= requiredGuarantors ? 'Requirement met' : `${requiredGuarantors - selectedGuarantors.length} more needed`}</p>
+                </fieldset>
               ) : null}
               <Button type="submit" disabled={saving || !canApply} loading={saving} className="w-full" startIcon={!saving ? <Send className="h-4 w-4" /> : undefined}>
                 Submit application
@@ -421,7 +445,7 @@ export const Loans = () => {
                         {currentDetail.borrower?.firstName ?? 'Member'} {currentDetail.borrower?.lastName ?? ''}
                       </p>
                     </div>
-                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[currentDetail.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{currentDetail.status}</span>
+                    <span className={`loan-status loan-status-${currentDetail.status.toLowerCase()} inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[currentDetail.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{statusLabel[currentDetail.status] ?? currentDetail.status}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3 text-sm text-[var(--ds-text-muted)]">
                     <span>Requested {formatMoney(currentDetail.amountRequested)}</span>
@@ -430,11 +454,14 @@ export const Loans = () => {
                     <span>{currentDetail.interestRate}% interest</span>
                     {currentDetail.repaymentPeriodMonths ? <span>{currentDetail.repaymentPeriodMonths} months</span> : null}
                   </div>
+                  {currentDetail.reviewedAt ? <div className="mt-4 rounded-xl border border-[var(--ds-border)] bg-[var(--ds-surface-2)] p-3 text-sm"><p className="font-semibold text-[var(--ds-secondary)]">Decision {currentDetail.status === 'REJECTED' ? 'rejected' : 'recorded'} by {currentDetail.reviewedBy ? `${currentDetail.reviewedBy.firstName} ${currentDetail.reviewedBy.lastName}` : 'group leader'}</p><p className="mt-1 text-[var(--ds-text-muted)]">{new Date(currentDetail.reviewedAt).toLocaleString('en-KE')}{currentDetail.decisionReason ? ` · ${currentDetail.decisionReason}` : ''}</p></div> : null}
+                  {currentDetail.borrowerId === user?.id && ['APPROVED', 'REJECTED'].includes(currentDetail.status) ? <div className="mt-4 rounded-xl border border-[var(--ds-border)] p-3"><p className="mb-2 text-sm font-semibold">Question this decision</p><TextField label="Tell the leaders what you want reviewed" value={disputeDraft} onChange={(event) => setDisputeDraft(event.target.value)} /><Button className="mt-2" variant="outline" disabled={saving || disputeDraft.trim().length < 10} onClick={() => void submitLoanDispute(currentDetail)} startIcon={<Flag className="h-4 w-4" />}>Raise a dispute</Button>{disputeMessage ? <p role="status" className="mt-2 text-sm text-emerald-700">{disputeMessage} <Link className="font-semibold underline" to={ROUTES.chama.disputes(currentOrganization.id)}>Open My disputes</Link></p> : null}</div> : null}
                   {currentDetail.guarantors?.length ? (
                     <div className="mt-3 text-sm text-[var(--ds-text-muted)]">
                       Guarantors: {currentDetail.guarantors.map((guarantor: LoanGuarantorRecord) => {
                         const name = guarantor.member ? `${guarantor.member.firstName} ${guarantor.member.lastName}` : guarantor.memberId;
-                        return `${name} (${guarantor.status ?? 'PENDING'})`;
+                        const status = guarantor.status ?? 'PENDING';
+                        return `${name} (${guarantorStatusLabel[status] ?? status})`;
                       }).join(', ')}
                     </div>
                   ) : null}

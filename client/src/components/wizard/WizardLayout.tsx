@@ -18,6 +18,8 @@ export interface WizardDraftState {
   welfareRules?: WelfareRulesConfig;
   contributionRules?: { amount: number; frequency: 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'one_time' | 'custom'; dueDate: string; latePenalty: number; gracePeriodDays: number; lateAllowed?: boolean; startDate?: string; applyTo?: 'all_members' | 'active_members'; customFrequency?: string };
   loanRules?: { enabled: boolean; interestRate: number; maxLoanMultiplier: number; repaymentPeriodMonths: number; guarantorsRequired: number; lateRepaymentPenalty: number };
+  paymentSettings?: { isEnabled: boolean; mode: 'MPESA_NUMBER' | 'PAYBILL'; mpesaNumber: string; paybillNumber: string; accountNumber: string; accountReference: string };
+  savedOrganizationId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -50,6 +52,7 @@ export const WizardLayout = () => {
     enabledModules: getDefaultEnabledModules(ChamaType.Savings),
     contributionRules: { amount: 1000, frequency: 'monthly', dueDate: '', latePenalty: 0, gracePeriodDays: 3, lateAllowed: true, startDate: '', applyTo: 'all_members' },
     loanRules: { enabled: false, interestRate: 5, maxLoanMultiplier: 3, repaymentPeriodMonths: 6, guarantorsRequired: 2, lateRepaymentPenalty: 0 },
+    paymentSettings: { isEnabled: true, mode: 'MPESA_NUMBER', mpesaNumber: '', paybillNumber: '', accountNumber: '', accountReference: '' },
   };
   const [draft, setDraft] = React.useState<WizardDraftState>(() => {
     try {

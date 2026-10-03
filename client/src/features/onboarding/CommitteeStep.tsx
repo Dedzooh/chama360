@@ -49,10 +49,11 @@ export const CommitteeStep = () => {
             </div>
             <input
               className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3"
-              placeholder="Select member or enter name"
+              placeholder="Enter a name"
               value={committee[index]?.name ?? ""}
               onChange={(event) => saveCommitteeRole(role.key, event.target.value)}
             />
+            <span className="block text-sm text-slate-500">You can invite this person to the Chama in the next step.</span>
           </label>
         ))}
         <label className="space-y-2 md:col-span-2">

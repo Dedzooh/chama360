@@ -35,7 +35,7 @@ import {
   type ProfileUpdate,
 } from '../schemas/auth';
 import { User, Prisma } from '@prisma/client';
-import { randomInt, timingSafeEqual } from 'crypto';
+import { randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { config } from '../config/environment';
 
 // Extended user interface with KYC data

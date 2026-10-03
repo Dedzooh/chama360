@@ -14,7 +14,7 @@ router.post(
     }
 
     const { id, meetingId } = req.params as { id: string; meetingId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isVoteManager(access) && !hasOrganizationPermission(access, 'MANAGE_VOTING')) {
       throw new ForbiddenError('Insufficient permissions to create votes');
     }
@@ -30,7 +30,7 @@ router.post(
       throw new NotFoundError('Meeting not found');
     }
 
-    const linkedChamaId = (currentOrganization).chama?.id;
+    const linkedChamaId = (currentOrganization as any).chama?.id;
     if (!linkedChamaId) {
       throw new BadRequestError('Organization is not linked to a Chama');
     }
@@ -40,7 +40,7 @@ router.post(
         chamaId: linkedChamaId,
         organizationId: id,
         meetingId,
-        createdById: req.user.id,
+        createdById: req.user.id as string,
         title: payload.title,
         description: payload.description,
         type: 'SIMPLE' as any,
@@ -64,7 +64,7 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'CREATE',
       entityType: 'Vote',
       entityId: vote.id,
@@ -85,7 +85,7 @@ router.get(
     }
 
     const { id, meetingId } = req.params as { id: string; meetingId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const votes = await db.vote.findMany({
       where: { organizationId: id, meetingId },
@@ -112,7 +112,7 @@ router.patch(
     }
 
     const { id, voteId } = req.params as { id: string; voteId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isVoteManager(access) && !hasOrganizationPermission(access, 'MANAGE_VOTING')) {
       throw new ForbiddenError('Insufficient permissions to close votes');
     }
@@ -131,7 +131,7 @@ router.patch(
       where: { id: voteId },
       data: {
         status: 'CLOSED' as any,
-        closedById: req.user.id,
+        closedById: req.user.id as string,
         closesAt: new Date(),
       },
       include: {
@@ -144,7 +144,7 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'UPDATE',
       entityType: 'Vote',
       entityId: voteId,
@@ -167,7 +167,7 @@ router.post(
     }
 
     const { id, voteId } = req.params as { id: string; voteId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const currentOrganization = await requireOrganizationStatus(id);
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
@@ -193,11 +193,11 @@ router.post(
     }
 
     const response = await db.voteCast.upsert({
-      where: { voteId_memberId: { voteId, memberId: req.user.id } },
+      where: { voteId_memberId: { voteId, memberId: req.user.id as string } },
       create: {
         organizationId: id,
         voteId,
-        memberId: req.user.id,
+        memberId: req.user.id as string,
         selectedOption: payload.selectedOption,
         votedAt: new Date(),
       },
@@ -210,7 +210,7 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'CREATE',
       entityType: 'VoteCast',
       entityId: response.id,
@@ -231,7 +231,7 @@ router.get(
     }
 
     const { id, voteId } = req.params as { id: string; voteId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const vote = await db.vote.findFirst({
       where: { id: voteId, organizationId: id },

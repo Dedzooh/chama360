@@ -44,7 +44,7 @@ The public liveness/readiness endpoints are:
 /health/operations
 ```
 
-`/health/operations` reports recent failed subscription payments, failed SMS delivery, failed background jobs, pending M-Pesa callbacks with errors, reconciliation-required transactions, process memory/uptime/load, and organization document storage usage. Alert on non-200 readiness, database/Redis unhealthy status, any reconciliation-required increase, failed callbacks, failed jobs, failed SMS spikes, negative wallet balances, and backup container/object-store failure. Backup success must also be checked externally from the backup container logs and the backup bucket's latest object timestamp; do not rely on API liveness as proof of backup success.
+`/health/operations` exposes aggregate counts for failed subscription payments, failed SMS delivery, failed background jobs, pending M-Pesa callbacks with errors, and reconciliation-required transactions. Detailed scheduled-task outcomes, failed jobs, and callback errors are available to authenticated platform administrators at `/api/v1/platform/subscriptions/operations`. Alert on non-200 readiness, database/Redis unhealthy status, any reconciliation-required increase, failed callbacks, failed jobs, failed SMS spikes, negative wallet balances, and backup container/object-store failure. Backup success must also be checked externally from the backup container logs and the backup bucket's latest object timestamp; do not rely on API liveness as proof of backup success.
 
 ## Operational notes
 

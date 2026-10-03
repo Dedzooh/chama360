@@ -13,7 +13,7 @@ router.post(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isMeetingManager(access) && !hasOrganizationPermission(access, 'CREATE_MEETINGS')) {
       throw new ForbiddenError('Insufficient permissions to create meetings');
     }
@@ -27,7 +27,7 @@ router.post(
     const meeting = await db.meeting.create({
       data: {
         organizationId: id,
-        createdById: req.user.id,
+        createdById: req.user.id as string,
         title: payload.title,
         dateTime: new Date(payload.dateTime),
         venue: payload.venue,
@@ -45,7 +45,7 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'CREATE',
       entityType: 'Meeting',
       entityId: meeting.id,
@@ -65,7 +65,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const meetings = await db.meeting.findMany({
       where: { organizationId: id },
@@ -90,7 +90,7 @@ router.get(
     }
 
     const { id, meetingId } = req.params as { id: string; meetingId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const meeting = await db.meeting.findFirst({
       where: { id: meetingId, organizationId: id },
@@ -118,7 +118,7 @@ router.patch(
     }
 
     const { id, meetingId } = req.params as { id: string; meetingId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isMeetingManager(access) && !hasOrganizationPermission(access, 'CREATE_MEETINGS')) {
       throw new ForbiddenError('Insufficient permissions to update meetings');
     }
@@ -143,7 +143,7 @@ router.patch(
         dateTime: payload.dateTime ? new Date(payload.dateTime) : undefined,
         venue: payload.venue,
         agenda: payload.agenda,
-        status: payload.status,
+        status: payload.status as any,
         scheduledFor: payload.dateTime ? new Date(payload.dateTime) : undefined,
         location: payload.venue,
       },
@@ -156,7 +156,7 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'UPDATE',
       entityType: 'Meeting',
       entityId: meetingId,
@@ -177,7 +177,7 @@ router.get(
     }
 
     const { id, meetingId } = req.params as { id: string; meetingId: string };
-    await getOrganizationAccess(id, req.user.id);
+    await getOrganizationAccess(id, req.user.id as string);
 
     const attendance = await db.meetingAttendance.findMany({
       where: { organizationId: id, meetingId },
@@ -198,7 +198,7 @@ router.post(
     }
 
     const { id, meetingId } = req.params as { id: string; meetingId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isMeetingManager(access) && !hasOrganizationPermission(access, 'MANAGE_ATTENDANCE')) {
       throw new ForbiddenError('Insufficient permissions to record attendance');
     }
@@ -215,21 +215,21 @@ router.post(
         organizationId: id,
         meetingId,
         memberId: payload.memberId,
-        status: payload.status,
+        status: payload.status as any,
         notes: payload.notes,
-        recordedById: req.user.id,
+        recordedById: req.user.id as string,
       },
       update: {
-        status: payload.status,
+        status: payload.status as any,
         notes: payload.notes,
-        recordedById: req.user.id,
+        recordedById: req.user.id as string,
       },
       include: { member: true, recordedBy: true },
     });
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'UPDATE',
       entityType: 'MeetingAttendance',
       entityId: attendance.id,
@@ -249,7 +249,7 @@ router.post(
     }
 
     const { id, meetingId } = req.params as { id: string; meetingId: string };
-    const access = await getOrganizationAccess(id, req.user.id);
+    const access = await getOrganizationAccess(id, req.user.id as string);
     if (!isMeetingManager(access) && !hasOrganizationPermission(access, 'RECORD_MINUTES')) {
       throw new ForbiddenError('Insufficient permissions to record minutes');
     }
@@ -284,7 +284,7 @@ router.post(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: req.user.id,
+      userId: req.user.id as string,
       action: 'UPDATE',
       entityType: 'Meeting',
       entityId: meetingId,

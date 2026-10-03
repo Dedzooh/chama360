@@ -317,6 +317,7 @@ export interface Loan {
   status: LoanStatus;
   reviewedById?: string | null;
   reviewedAt?: string | null;
+  decisionReason?: string | null;
   disbursedAt?: string | null;
   dueDate?: string | null;
   balance: number;

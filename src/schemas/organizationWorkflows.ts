@@ -13,26 +13,21 @@ export const contributionCreateSchema = z.object({
 });
 
 export const markContributionPaidSchema = z.object({ paymentMethod: z.enum(['CASH', 'MPESA', 'BANK']), reference: z.string().trim().max(120).optional(), paidAt: z.string().datetime().optional() });
+export const submitContributionPaymentSchema = z.object({ amount: z.number().positive(), paymentMethod: z.enum(['CASH', 'MPESA', 'BANK']), reference: z.string().trim().min(1).max(120), paidAt: z.string().datetime().optional() });
+export const reviewContributionPaymentSchema = z.object({ reason: z.string().trim().min(3).max(500).optional() });
 export const reverseContributionSchema = z.object({ reason: z.string().min(1) });
 
-export const paymentProofSubmitSchema = z.object({
-  contributionId: z.string().cuid(),
-  paymentMethod: z.enum(['MPESA', 'BANK', 'CASH']).default('MPESA'),
-  amount: z.number().positive().optional(),
-  reference: z.string().trim().min(4).max(40).optional(),
-  paidAt: z.string().datetime().optional(),
-  note: z.string().trim().max(500).optional(),
-});
-export const paymentProofDecisionSchema = z.object({ reason: z.string().trim().max(500).optional() });
-
 export const loanApplySchema = z.object({ memberId: z.string().cuid().optional(), amountRequested: z.number().positive(), purpose: z.string().max(500).optional(), interestRate: z.number().min(0).max(100).default(0), repaymentPeriodMonths: z.number().int().min(1).max(60).default(6), guarantors: z.array(z.string().cuid()).default([]) });
+export const loanDecisionSchema = z.object({ reason: z.string().trim().min(1).max(500) });
 export const guaranteeDecisionSchema = z.object({ guaranteedAmount: z.number().positive().optional() });
 export const loanRepaySchema = z.object({ amount: z.number().positive(), paymentMethod: z.enum(['CASH', 'MPESA', 'BANK']).default('CASH'), reference: z.string().min(1).optional(), idempotencyKey: z.string().trim().min(8).max(120).optional() });
 
 export const investmentAssetSchema = z.object({ name: z.string().trim().min(2).max(120), category: z.enum(['TREASURY_BOND', 'MONEY_MARKET', 'REAL_ESTATE', 'SHARES', 'BUSINESS', 'OTHER']), purchaseDate: z.string().date(), purchaseCost: z.number().positive(), currentValue: z.number().min(0), units: z.number().positive().default(1), status: z.enum(['ACTIVE', 'MATURED', 'SOLD']).default('ACTIVE'), notes: z.string().trim().max(500).optional() });
 
 export const welfareCreateSchema = z.object({ memberId: z.string().cuid(), claimType: z.string().min(1), reason: z.string().min(1), amountRequested: z.number().positive(), documents: z.array(z.string()).default([]) });
-export const welfareTransitionSchema = z.object({ comment: z.string().trim().max(500).optional() }).default({});
+export const welfareTransitionSchema = z.object({ comment: z.string().trim().min(1).max(500).optional() }).default({});
+export const disputeCreateSchema = z.object({ category: z.enum(['CONTRIBUTION', 'LOAN', 'PAYOUT', 'GOVERNANCE', 'OTHER']), relatedEntityType: z.enum(['LOAN', 'WELFARE_CLAIM']).optional(), relatedEntityId: z.string().cuid().optional(), description: z.string().trim().min(10).max(2000) });
+export const disputeStatusSchema = z.object({ status: z.enum(['UNDER_REVIEW', 'VOTING', 'RESOLVED', 'CLOSED']), resolution: z.string().trim().min(1).max(1000) });
 
 export const meetingCreateSchema = z.object({ title: z.string().min(3), dateTime: z.string().datetime(), venue: z.string().min(1).optional(), agenda: z.array(z.string()).default([]) });
 export const meetingUpdateSchema = z.object({ title: z.string().min(3).optional(), dateTime: z.string().datetime().optional(), venue: z.string().min(1).optional(), agenda: z.array(z.string()).optional(), status: z.enum(['SCHEDULED', 'ONGOING', 'COMPLETED', 'CANCELLED']).optional() });

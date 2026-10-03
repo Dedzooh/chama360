@@ -32,6 +32,7 @@ const Loans = page(() => import('./features/loans'), 'Loans');
 const Welfare = page(() => import('./features/welfare'), 'Welfare');
 const Approvals = page(() => import('./features/approvals'), 'ApprovalsPage');
 const FinancialExceptions = page(() => import('./features/finance'), 'FinancialExceptionsPage');
+const Disputes = page(() => import('./features/disputes'), 'DisputesPage');
 const Investments = page(() => import('./features/investments'), 'Investments');
 const Meetings = page(() => import('./features/meetings'), 'Meetings');
 const Reports = page(() => import('./features/reports'), 'Reports');
@@ -60,6 +61,7 @@ const InviteMembersStep = page(() => import('./features/onboarding'), 'InviteMem
 const ReviewSetupStep = page(() => import('./features/onboarding'), 'ReviewSetupStep');
 const Upgrade = page(() => import('./features/utility'), 'Upgrade');
 const PlatformSubscriptions = page(() => import('./features/utility'), 'PlatformSubscriptions');
+const PlatformOperations = page(() => import('./features/utility'), 'PlatformOperations');
 const Legal = page(() => import('./features/public'), 'Legal');
 const DownloadApp = page(() => import('./features/public'), 'DownloadApp');
 
@@ -105,6 +107,7 @@ function App() {
               <Route element={<PlatformAccess />}>
                 <Route path={ROUTES.platform.home} element={<PlatformSubscriptions />} />
                 <Route path={ROUTES.platform.subscriptions} element={<PlatformSubscriptions />} />
+                <Route path={ROUTES.platform.operations} element={<PlatformOperations />} />
               </Route>
 
               <Route path={ROUTES.app.createChama}>
@@ -133,6 +136,7 @@ function App() {
                 <Route path="approvals" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Approvals"><Approvals /></WorkspaceAccess>} />
                 <Route path="approvals/:kind" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Approvals"><Approvals /></WorkspaceAccess>} />
                 <Route path="approvals/:kind/:itemId" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Approvals"><Approvals /></WorkspaceAccess>} />
+                <Route path="disputes" element={<Disputes />} />
                  <Route path="financial-exceptions" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="Financial Exceptions"><FinancialExceptions /></WorkspaceAccess>} />
                 <Route path="investments" element={<WorkspaceAccess module="investments" label="Investments"><PremiumRoute feature="INVESTMENT_AUTOMATION"><Investments /></PremiumRoute></WorkspaceAccess>} />
                 <Route path="meetings" element={<WorkspaceAccess module="meetings" label="Meetings"><Meetings /></WorkspaceAccess>} />

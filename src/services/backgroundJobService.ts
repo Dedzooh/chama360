@@ -174,7 +174,7 @@ export class BackgroundJobService {
     const validatedQuery = backgroundJobQuerySchema.parse(query);
 
     const where = {
-      ...((validatedQuery.type != null) && { type: validatedQuery.type }),
+      ...(validatedQuery.type && { type: validatedQuery.type }),
       ...(validatedQuery.status && { status: validatedQuery.status }),
       ...(validatedQuery.startDate && validatedQuery.endDate && {
         createdAt: {

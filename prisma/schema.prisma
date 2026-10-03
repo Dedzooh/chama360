@@ -787,6 +787,7 @@ model Loan {
   status               LoanStatus @default(PENDING)
   reviewedById         String?
   reviewedAt           DateTime?
+  decisionReason       String?  @db.VarChar(500)
   disbursedAt          DateTime?
   dueDate              DateTime?
   balance              Decimal  @db.Decimal(14, 2)
@@ -906,6 +907,9 @@ model Dispute {
   status             DisputeStatus @default(OPEN)
   resolution         Json?
   immutableHash      String   @unique
+  relatedEntityType String?
+  relatedEntityId   String?
+  activity          Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1092,6 +1096,18 @@ model BackgroundJob {
   @@map("background_jobs")
 }
 
+model ScheduledTaskHealth {
+  taskName             String   @id
+  status               String   @default("RUNNING")
+  lastStartedAt        DateTime?
+  lastCompletedAt      DateTime?
+  lastError            String?
+  consecutiveFailures  Int      @default(0)
+  updatedAt            DateTime @updatedAt
+
+  @@map("scheduled_task_health")
+}
+
 model AuditLog {
   id             String   @id @default(cuid())
   action         AuditAction
@@ -1142,6 +1158,7 @@ model WelfareClaim {
   supportingDocuments Json?
   reviewedById     String?
   reviewedAt       DateTime?
+  statusHistory    Json?
   paidAt           DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

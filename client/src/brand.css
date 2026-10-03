@@ -123,6 +123,77 @@ body {
 .chama360-bottom-nav { border-color: rgba(255,255,255,.7) !important; background: rgba(255,255,255,.9) !important; box-shadow: 0 -10px 40px rgba(16,35,29,.1) !important; }
 .chama360-bottom-fab { background: var(--brand-forest) !important; box-shadow: 0 14px 28px rgba(7,91,69,.28) !important; }
 
+/* Loan workspace: make the application the first clear action on small screens. */
+.chama360-loans .loan-workspace-grid { align-items: start; }
+.chama360-loans .loan-list-panel { order: 2; }
+.chama360-loans .loan-side-panel { order: 1; }
+.chama360-loans .loan-application-card {
+  position: relative;
+  border-color: #b8dfd0 !important;
+  background: radial-gradient(ellipse at 100% 0%, rgba(11,143,104,.1), transparent 19rem), #fff !important;
+  box-shadow: 0 16px 38px rgba(7,91,69,.09) !important;
+}
+.chama360-loans .loan-application-card::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 5px;
+  background: linear-gradient(90deg, var(--brand-forest), var(--brand-emerald), var(--brand-gold));
+  content: "";
+}
+.chama360-loans .loan-steps { padding: 0; list-style: none; }
+.chama360-loans .loan-step {
+  display: grid;
+  min-height: 8rem;
+  align-content: start;
+  gap: .38rem;
+  padding: .9rem;
+  border: 1px solid #dce7e1;
+  border-radius: 1rem;
+  background: rgba(255,255,255,.84);
+}
+.chama360-loans .loan-step-number {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  margin-bottom: .2rem;
+  border-radius: .65rem;
+  color: #fff;
+  background: var(--brand-forest);
+  font-size: .72rem;
+  font-weight: 900;
+}
+.chama360-loans .loan-step strong { color: var(--brand-ink); font-size: .84rem; }
+.chama360-loans .loan-step > span:last-child { color: var(--brand-muted); font-size: .76rem; line-height: 1.45; }
+.chama360-loans .loan-record-card {
+  border-left: 4px solid #dce7e1 !important;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.chama360-loans .loan-record-card:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(16,35,29,.08) !important; }
+.chama360-loans .loan-record-card-pending { border-left-color: #d9a441 !important; }
+.chama360-loans .loan-record-card-approved { border-left-color: #4386bd !important; }
+.chama360-loans .loan-record-card-active,
+.chama360-loans .loan-record-card-paid { border-left-color: var(--brand-emerald) !important; }
+.chama360-loans .loan-record-card-rejected,
+.chama360-loans .loan-record-card-defaulted { border-left-color: #bb5650 !important; }
+.chama360-loans .loan-status { max-width: 100%; text-align: center; font-weight: 800; line-height: 1.35; }
+.chama360-loans .loan-guarantor-option { transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+.chama360-loans .loan-guarantor-option:hover { border-color: #98cbb6; background: #f4fbf7; }
+.chama360-loans .loan-guarantor-option:focus-within { outline: 3px solid rgba(11,143,104,.22); outline-offset: 1px; }
+.chama360-loans .loan-guarantor-option input { width: 1.05rem; height: 1.05rem; flex: 0 0 auto; accent-color: var(--brand-forest); }
+@media (min-width: 1024px) {
+  .chama360-loans .loan-list-panel { order: 1; }
+  .chama360-loans .loan-side-panel { order: 2; }
+}
+@media (max-width: 640px) {
+  .chama360-loans .loan-application-card { padding: 1.1rem !important; }
+  .chama360-loans .loan-step { min-height: auto; grid-template-columns: 2rem 1fr; align-items: center; column-gap: .65rem; }
+  .chama360-loans .loan-step-number { grid-row: span 2; margin: 0; }
+  .chama360-loans .loan-step > span:last-child { grid-column: 2; }
+}
+
 @media (max-width: 900px) {
   .splash-nav { display: none; }
   .splash-nav-menu { display: inline-flex; }

@@ -13,8 +13,8 @@ router.post(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id));
-    if (!hasOrganizationPermission(access, 'INVITE_MEMBERS') && !isOwnerLike((access.role)?.name || '')) {
+    const access = await getOrganizationAccess(id, (req.user.id as string));
+    if (!hasOrganizationPermission(access, 'INVITE_MEMBERS') && !isOwnerLike((access.role as any)?.name || '')) {
       throw new ForbiddenError('Insufficient permissions to add members');
     }
 
@@ -38,7 +38,7 @@ router.post(
     const role = await db.organizationRole.findFirst({
       where: {
         organizationId: id,
-        name: payload.role,
+        name: payload.role as any,
       },
     });
 
@@ -55,11 +55,11 @@ router.post(
       },
     });
     const memberRecordCount = await db.organizationMember.count({ where: { organizationId: id } });
-    if (memberRecordCount === 2) await db.commercialFunnelEvent.create({ data: { eventType: 'FIRST_MEMBER_INVITED', userId: req.user.id, organizationId: id } });
+    if (memberRecordCount === 2) await db.commercialFunnelEvent.create({ data: { eventType: 'FIRST_MEMBER_INVITED', userId: req.user!.id, organizationId: id } });
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id),
+      userId: (req.user.id as string),
       action: 'CREATE',
       entityType: 'OrganizationMember',
       entityId: member.id,
@@ -79,8 +79,8 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    const access = await getOrganizationAccess(id, (req.user.id));
-    const roleName = (access.role)?.name || '';
+    const access = await getOrganizationAccess(id, (req.user.id as string));
+    const roleName = (access.role as any)?.name || '';
     const canViewContacts = isOwnerLike(roleName) || ['TREASURER', 'SECRETARY'].includes(roleName) || hasOrganizationPermission(access, 'VIEW_MEMBER_CONTACTS');
 
     const members = await db.organizationMember.findMany({
@@ -102,7 +102,7 @@ router.get(
     }
 
     const { id } = req.params as { id: string };
-    await getOrganizationAccess(id, (req.user.id));
+    await getOrganizationAccess(id, (req.user.id as string));
 
     const roles = await db.organizationRole.findMany({
       where: { organizationId: id },
@@ -123,8 +123,8 @@ router.patch(
     }
 
     const { id, memberId } = req.params as { id: string; memberId: string };
-    const access = await getOrganizationAccess(id, (req.user.id));
-    if (!hasOrganizationPermission(access, 'MANAGE_ROLES') && !isOwnerLike((access.role)?.name || '')) {
+    const access = await getOrganizationAccess(id, (req.user.id as string));
+    if (!hasOrganizationPermission(access, 'MANAGE_ROLES') && !isOwnerLike((access.role as any)?.name || '')) {
       throw new ForbiddenError('Insufficient permissions to update members');
     }
 
@@ -165,7 +165,7 @@ router.patch(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id),
+      userId: (req.user.id as string),
       action: 'UPDATE',
       entityType: 'OrganizationMember',
       entityId: memberId,
@@ -186,8 +186,8 @@ router.delete(
     }
 
     const { id, memberId } = req.params as { id: string; memberId: string };
-    const access = await getOrganizationAccess(id, (req.user.id));
-    if (!hasOrganizationPermission(access, 'MANAGE_ROLES') && !isOwnerLike((access.role)?.name || '')) {
+    const access = await getOrganizationAccess(id, (req.user.id as string));
+    if (!hasOrganizationPermission(access, 'MANAGE_ROLES') && !isOwnerLike((access.role as any)?.name || '')) {
       throw new ForbiddenError('Insufficient permissions to remove members');
     }
 
@@ -211,7 +211,7 @@ router.delete(
 
     await writeOrganizationAudit({
       organizationId: id,
-      userId: (req.user.id),
+      userId: (req.user.id as string),
       action: 'DELETE',
       entityType: 'OrganizationMember',
       entityId: memberId,

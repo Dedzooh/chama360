@@ -43,6 +43,7 @@ export const ROUTES = {
     approvalQueue: (organizationId: string, kind: string) => `/chamas/${organizationId}/approvals/${kind}`,
     approvalItem: (organizationId: string, kind: string, itemId: string) => `/chamas/${organizationId}/approvals/${kind}/${itemId}`,
     financialExceptions: (organizationId: string) => `/chamas/${organizationId}/financial-exceptions`,
+    disputes: (organizationId: string) => `/chamas/${organizationId}/disputes`,
     investments: (organizationId: string) => `/chamas/${organizationId}/investments`,
     meetings: (organizationId: string) => `/chamas/${organizationId}/meetings`,
     meeting: (organizationId: string, meetingId: string) => `/chamas/${organizationId}/meetings/${meetingId}`,
@@ -70,6 +71,6 @@ export const ROUTES = {
     auditLogs: "/audit-logs",
     help: "/help",
   },
-  platform: { home: '/platform', subscriptions: '/platform/subscriptions' },
+  platform: { home: '/platform', subscriptions: '/platform/subscriptions', operations: '/platform/operations' },
   legal: { centre: '/legal', download: '/download' },
 } as const;

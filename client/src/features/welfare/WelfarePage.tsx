@@ -1,12 +1,16 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { HeartHandshake, Plus, RefreshCw, ShieldCheck, ThumbsDown, ThumbsUp, Wallet } from 'lucide-react';
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
+import { useAuthStore } from '../../store/authStore';
+import { Link } from 'react-router-dom';
+import { ROUTES } from '../../config/routes';
 import { useCompactLayout } from '../../hooks/useCompactLayout';
 import { organizationService, type WelfareClaimRecord } from '../../services/organizationService';
 import { getEnabledWelfareCategories, normalizeWelfareRules, WELFARE_APPROVAL_OPTIONS } from '../../config/welfareRules';
-import { Badge, Button, Card, Chip, EmptyState, MetricCard, SelectField, TextField, Timeline, WalletCard } from '../../design-system';
+import { Badge, Button, Card, EmptyState, MetricCard, SelectField, TextField, Timeline, WalletCard } from '../../design-system';
 
 const formatMoney = (value: number | string | undefined | null) => `KES ${Number(value ?? 0).toLocaleString()}`;
+const formatClaimStatus = (status: string) => status.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const financeRoles = ['OWNER', 'FOUNDER', 'TREASURER', 'ADMIN'];
 const reviewRoles = ['OWNER', 'FOUNDER', 'CHAIR', 'ADMIN'];
 
@@ -22,6 +26,7 @@ const statusTone: Record<string, string> = {
 export const Welfare = () => {
   const compactLayout = useCompactLayout();
   const { currentOrganization } = useOrganizationWorkspace();
+  const user = useAuthStore((state) => state.user);
   const [claims, setClaims] = useState<WelfareClaimRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -30,6 +35,9 @@ export const Welfare = () => {
   const [reason, setReason] = useState('');
   const [amountRequested, setAmountRequested] = useState('');
   const [documentsText, setDocumentsText] = useState('');
+  const [decisionComments, setDecisionComments] = useState<Record<string, string>>({});
+  const [disputeText, setDisputeText] = useState('');
+  const [disputeMessage, setDisputeMessage] = useState('');
 
   const canReview = useMemo(() => reviewRoles.includes((currentOrganization?.myRole ?? '').toUpperCase()), [currentOrganization?.myRole]);
   const canMarkPaid = useMemo(() => financeRoles.includes((currentOrganization?.myRole ?? '').toUpperCase()), [currentOrganization?.myRole]);
@@ -117,20 +125,33 @@ export const Welfare = () => {
 
   const reviewClaim = async (claimId: string, action: 'approve' | 'reject') => {
     if (!currentOrganization?.id) return;
+    const comment = (decisionComments[claimId] ?? '').trim();
+    if (comment.length < 3) { setError('Add a short reason for this welfare decision.'); return; }
     setSaving(true);
     setError(null);
     try {
       if (action === 'approve') {
-        await organizationService.approveWelfareClaim(currentOrganization.id, claimId);
+        await organizationService.approveWelfareClaim(currentOrganization.id, claimId, comment);
       } else {
-        await organizationService.rejectWelfareClaim(currentOrganization.id, claimId);
+        await organizationService.rejectWelfareClaim(currentOrganization.id, claimId, comment);
       }
+      setDecisionComments((current) => { const next = { ...current }; delete next[claimId]; return next; });
       await loadData();
     } catch (reviewError) {
       setError(reviewError instanceof Error ? reviewError.message : 'Failed to review welfare claim');
     } finally {
       setSaving(false);
     }
+  };
+
+  const raiseWelfareDispute = async (claim: WelfareClaimRecord) => {
+    if (!currentOrganization?.id || !disputeText.trim()) return;
+    setSaving(true); setError(null); setDisputeMessage('');
+    try {
+      await organizationService.createDispute(currentOrganization.id, { category: 'PAYOUT', relatedEntityType: 'WELFARE_CLAIM', relatedEntityId: claim.id, description: disputeText.trim() });
+      setDisputeText(''); setDisputeMessage('Dispute submitted. You can follow its status in My disputes.'); await loadData();
+    } catch (disputeError) { setError(disputeError instanceof Error ? disputeError.message : 'Could not submit this dispute.'); }
+    finally { setSaving(false); }
   };
 
   const markPaid = async (claimId: string) => {
@@ -173,10 +194,9 @@ export const Welfare = () => {
 
       {error ? <Card className="border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">{error}</Card> : null}
 
-      <section className="grid grid-cols-3 gap-2.5">
-        <MetricCard title="Claims" value={loading ? '...' : claims.length.toString()} caption="Submitted" tone="emerald" icon={<Wallet className="h-5 w-5" />} className="p-4" />
-        <MetricCard title="Pending" value={loading ? '...' : pendingCount.toString()} caption="Need review" tone="warning" icon={<Badge tone="warning">Open</Badge>} className="p-4" />
-        <MetricCard title="Paid" value={loading ? '...' : paidCount.toString()} caption="Completed" tone="success" icon={<Badge tone="success">Done</Badge>} className="p-4" />
+      <section className="grid grid-cols-2 gap-3">
+        <MetricCard title="Needs review" value={loading ? '...' : pendingCount.toString()} caption="Waiting for a decision" tone="warning" icon={<Badge tone="warning">Pending</Badge>} className="p-4" />
+        <MetricCard title="Paid out" value={loading ? '...' : paidCount.toString()} caption="Support already sent" tone="success" icon={<Badge tone="success">Paid</Badge>} className="p-4" />
       </section>
 
       <section className="section-shell overflow-hidden">
@@ -194,16 +214,14 @@ export const Welfare = () => {
 
       <section className="section-shell overflow-hidden">
         <div className="section-header">
-          <p className="text-sm text-[var(--ds-text-muted)]">Filters</p>
+          <p className="text-sm text-[var(--ds-text-muted)]">Claim list</p>
           <h2 className="mt-1 text-lg font-black text-[var(--ds-secondary)]">Review claims</h2>
         </div>
-        <div className="section-body flex flex-wrap gap-2">
-          <Chip active onClick={() => void loadData()}>
-            Refresh
-          </Chip>
-          <Chip active={canReview} onClick={() => void loadData()}>
-            Committee
-          </Chip>
+        <div className="section-body flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--ds-text-muted)]">Review requests below. Decision buttons appear when your role can act.</p>
+          <Button variant="outline" onClick={() => void loadData()} startIcon={<RefreshCw className="h-4 w-4" />}>
+            Refresh claims
+          </Button>
         </div>
       </section>
 
@@ -228,7 +246,7 @@ export const Welfare = () => {
                       <p className="text-xs uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">{claim.claimType ?? claim.type ?? 'Claim'}</p>
                       <h3 className="mt-2 text-lg font-black text-[var(--ds-secondary)]">{claim.reason ?? claim.description}</h3>
                     </div>
-                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[claim.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{claim.status}</span>
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[claim.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{formatClaimStatus(claim.status)}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <div className="rounded-2xl bg-[var(--ds-surface-2)] px-3 py-2">
@@ -244,15 +262,16 @@ export const Welfare = () => {
                     <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">
                       By {claim.requestedBy?.firstName ?? 'Member'} {claim.requestedBy?.lastName ?? ''}
                     </span>
-                    {Array.isArray(claim.documents) ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">{claim.documents.length} document(s)</span> : null}
+                    {Array.isArray(claim.documents) && claim.documents.length ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">{claim.documents.length} supporting file{claim.documents.length === 1 ? '' : 's'}</span> : null}
                   </div>
+                  {canApprove ? <div className="mt-3"><TextField label="Reason for your decision" helperText="Required for approval or rejection." value={decisionComments[claim.id] ?? ''} onChange={(event) => setDecisionComments((current) => ({ ...current, [claim.id]: event.target.value }))} /></div> : null}
                   <div className="mt-4 flex gap-2">
                     {canApprove ? (
                       <>
-                        <Button className="flex-1" disabled={saving} onClick={() => void reviewClaim(claim.id, 'approve')} startIcon={<ThumbsUp className="h-4 w-4" />}>
+                        <Button className="flex-1" disabled={saving || (decisionComments[claim.id] ?? '').trim().length < 3} onClick={() => void reviewClaim(claim.id, 'approve')} startIcon={<ThumbsUp className="h-4 w-4" />}>
                           Approve
                         </Button>
-                        <Button variant="outline" className="flex-1" disabled={saving} onClick={() => void reviewClaim(claim.id, 'reject')} startIcon={<ThumbsDown className="h-4 w-4" />}>
+                        <Button variant="outline" className="flex-1" disabled={saving || (decisionComments[claim.id] ?? '').trim().length < 3} onClick={() => void reviewClaim(claim.id, 'reject')} startIcon={<ThumbsDown className="h-4 w-4" />}>
                           Reject
                         </Button>
                       </>
@@ -263,6 +282,8 @@ export const Welfare = () => {
                       </Button>
                     ) : null}
                   </div>
+                  {claim.approvals?.length ? <details className="mt-3 rounded-xl border border-[var(--ds-border)] p-3"><summary className="cursor-pointer text-sm font-semibold">Decision history ({claim.approvals.length})</summary><div className="mt-3 space-y-2">{claim.approvals.map((approval) => <div key={approval.id} className="rounded-lg bg-[var(--ds-surface-2)] p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><strong>{approval.approver ? `${approval.approver.firstName} ${approval.approver.lastName}` : 'Committee member'} · {approval.decision === 'APPROVED' ? 'Approved' : 'Rejected'}</strong><span>{new Date(approval.createdAt).toLocaleString('en-KE')}</span></div>{approval.comment ? <p className="mt-1 text-[var(--ds-text-muted)]">Reason: {approval.comment}</p> : null}</div>)}</div></details> : claim.reviewedAt ? <p className="mt-3 text-sm text-[var(--ds-text-muted)]">Reviewed by {claim.reviewedBy ? `${claim.reviewedBy.firstName} ${claim.reviewedBy.lastName}` : 'group leader'} · {new Date(claim.reviewedAt).toLocaleString('en-KE')}</p> : null}
+                  {claim.requestedById === user?.id && ['APPROVED', 'REJECTED', 'PARTIALLY_APPROVED'].includes(claim.status) ? <div className="mt-3 rounded-xl border border-[var(--ds-border)] p-3"><TextField label="Question this decision" value={disputeText} onChange={(event) => setDisputeText(event.target.value)} /><Button variant="outline" className="mt-2" disabled={saving || disputeText.trim().length < 10} onClick={() => void raiseWelfareDispute(claim)}>Raise a dispute</Button>{disputeMessage ? <p role="status" className="mt-2 text-sm text-emerald-700">{disputeMessage} <Link className="font-semibold underline" to={ROUTES.chama.disputes(currentOrganization.id)}>Open My disputes</Link></p> : null}</div> : null}
                 </div>
               </Card>
             );
@@ -433,25 +454,30 @@ export const Welfare = () => {
                         <p className="font-semibold text-[var(--ds-secondary)]">{claim.claimType ?? claim.type ?? 'Claim'}</p>
                         <p className="text-sm text-[var(--ds-text-muted)]">{claim.reason ?? claim.description}</p>
                       </div>
-                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[claim.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{claim.status}</span>
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${statusTone[claim.status] ?? 'bg-slate-100 text-slate-600 border-slate-200'}`}>{formatClaimStatus(claim.status)}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-3 text-sm text-[var(--ds-text-muted)]">
                       <span>Requested {formatMoney(claim.amountRequested)}</span>
                       {claim.amountApproved !== null && claim.amountApproved !== undefined ? <span>Approved {formatMoney(claim.amountApproved)}</span> : null}
                       <span>
-                        By {claim.requestedBy?.firstName ?? 'Member'} {claim.requestedBy?.lastName ?? ''}
+                        Requested by {claim.requestedBy?.firstName ?? 'Member'} {claim.requestedBy?.lastName ?? ''}
                       </span>
-                      {Array.isArray(claim.documents) ? <span>{claim.documents.length} document(s)</span> : null}
+                      {Array.isArray(claim.documents) && claim.documents.length ? <span>{claim.documents.length} supporting file{claim.documents.length === 1 ? '' : 's'}</span> : null}
                       {claim.paidAt ? <span>Paid {claim.paidAt.slice(0, 10)}</span> : null}
                     </div>
+                    {claim.approvals?.length ? <details className="mt-3 rounded-xl border border-[var(--ds-border)] p-3"><summary className="cursor-pointer text-sm font-semibold">Decision history ({claim.approvals.length})</summary><div className="mt-3 space-y-2">{claim.approvals.map((approval) => <div key={approval.id} className="rounded-lg bg-[var(--ds-surface-2)] p-3 text-sm"><strong>{approval.approver ? `${approval.approver.firstName} ${approval.approver.lastName}` : 'Committee member'} · {approval.decision === 'APPROVED' ? 'Approved' : 'Rejected'}</strong><p className="mt-1 text-xs text-[var(--ds-text-muted)]">{new Date(approval.createdAt).toLocaleString('en-KE')}</p>{approval.comment ? <p className="mt-1 text-[var(--ds-text-muted)]">Reason: {approval.comment}</p> : null}</div>)}</div></details> : claim.reviewedAt ? <p className="mt-2 text-sm text-[var(--ds-text-muted)]">Reviewed by {claim.reviewedBy ? `${claim.reviewedBy.firstName} ${claim.reviewedBy.lastName}` : 'group leader'} · {new Date(claim.reviewedAt).toLocaleString('en-KE')}</p> : null}
+                    {claim.requestedById === user?.id && ['APPROVED', 'REJECTED', 'PARTIALLY_APPROVED'].includes(claim.status) ? <div className="mt-3 rounded-xl border border-[var(--ds-border)] p-3"><TextField label="Question this decision" value={disputeText} onChange={(event) => setDisputeText(event.target.value)} /><Button variant="outline" className="mt-2" disabled={saving || disputeText.trim().length < 10} onClick={() => void raiseWelfareDispute(claim)}>Raise a dispute</Button>{disputeMessage ? <p role="status" className="mt-2 text-sm text-emerald-700">{disputeMessage} <Link className="font-semibold underline" to={ROUTES.chama.disputes(currentOrganization.id)}>Open My disputes</Link></p> : null}</div> : null}
+                    {canApprove || canPay ? (
+                      canApprove ? <div className="mt-3"><TextField label="Reason for your decision" helperText="Required for approval or rejection." value={decisionComments[claim.id] ?? ''} onChange={(event) => setDecisionComments((current) => ({ ...current, [claim.id]: event.target.value }))} /></div> : null
+                    ) : null}
                     {canApprove || canPay ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         {canApprove ? (
                           <>
-                            <Button disabled={saving} onClick={() => void reviewClaim(claim.id, 'approve')} startIcon={<ThumbsUp className="h-4 w-4" />}>
+                            <Button disabled={saving || (decisionComments[claim.id] ?? '').trim().length < 3} onClick={() => void reviewClaim(claim.id, 'approve')} startIcon={<ThumbsUp className="h-4 w-4" />}>
                               Approve
                             </Button>
-                            <Button variant="outline" disabled={saving} onClick={() => void reviewClaim(claim.id, 'reject')} startIcon={<ThumbsDown className="h-4 w-4" />}>
+                            <Button variant="outline" disabled={saving || (decisionComments[claim.id] ?? '').trim().length < 3} onClick={() => void reviewClaim(claim.id, 'reject')} startIcon={<ThumbsDown className="h-4 w-4" />}>
                               Reject
                             </Button>
                           </>

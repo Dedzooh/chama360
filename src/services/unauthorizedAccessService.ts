@@ -140,7 +140,7 @@ export class UnauthorizedAccessService {
     }
 
     // Check for privilege escalation attempts
-    if ((attempt.attemptedPermission != null) && attempt.requiredRole) {
+    if (attempt.attemptedPermission && attempt.requiredRole) {
       await this.checkPrivilegeEscalation(attempt);
     }
   }

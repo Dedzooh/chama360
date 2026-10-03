@@ -4,6 +4,7 @@ export { Documents } from './Documents.tsx';
 export { Help } from './Help.tsx';
 export { MobileTools } from './MobileTools.tsx';
 export { PlatformSubscriptions } from './PlatformSubscriptions.tsx';
+export { PlatformOperations } from './PlatformOperations.tsx';
 export { Upgrade } from './Upgrade.tsx';
 export { JoinChama } from './JoinChama.tsx';
 

@@ -38,7 +38,7 @@ export const ChooseTypeStep = () => {
             <button
               key={type}
               type="button"
-              onClick={() => updateDraft({ chamaType: type, enabledModules: getDefaultEnabledModules(type) })}
+              onClick={() => updateDraft({ chamaType: type, enabledModules: getDefaultEnabledModules(type), savedOrganizationId: undefined })}
               className={`chama360-type-card ${active ? 'active' : ''}`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -46,13 +46,13 @@ export const ChooseTypeStep = () => {
                   <span className="chama360-type-icon">
                     <Icon className="h-5 w-5" />
                   </span>
-                  <p className="text-xs uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">Chama Type</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">Group type</p>
                   <p className="mt-2 text-lg font-black text-[var(--ds-secondary)]">{details.label}</p>
                 </div>
                 {active ? <span className="chama360-type-selected">Selected</span> : null}
               </div>
               <p className="mt-3 text-sm leading-6 text-[var(--ds-text-muted)]">{details.description}</p>
-              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ds-primary-strong)]">Best for</p>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ds-primary-strong)]">This works well for</p>
               <p className="mt-1 text-sm leading-6 text-[var(--ds-text-secondary)]">{details.bestFor}</p>
             </button>
           );
@@ -61,10 +61,10 @@ export const ChooseTypeStep = () => {
 
       <Card className="chama360-selected-type-card p-5">
         <div className="flex flex-col gap-3">
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">Selected type</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">Your choice</p>
           <h3 className="text-xl font-black text-[var(--ds-secondary)]">{selectedDetails.label}</h3>
           <p className="leading-6 text-[var(--ds-text-muted)]">{selectedDetails.description}</p>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ds-primary-strong)]">This setup is best for</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ds-primary-strong)]">This works well for</p>
           <p className="leading-6 text-[var(--ds-text-secondary)]">{selectedDetails.bestFor}</p>
         </div>
       </Card>

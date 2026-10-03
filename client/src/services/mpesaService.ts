@@ -61,6 +61,7 @@ export const mpesaService = {
   },
 
   manualReconcile: async (payload: {
+    transactionId?: string;
     contributionId: string;
     mpesaReceiptNumber: string;
     amount: number;

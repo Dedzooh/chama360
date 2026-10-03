@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   ArrowDownCircle,
   ArrowRight,
@@ -66,7 +66,6 @@ const LoadingStat = () => (
 );
 
 export const Dashboard = () => {
-  const navigate = useNavigate();
   const compactLayout = useCompactLayout();
   const { organizationId } = useParams();
   const { organizations, currentOrganization, loading, error, refreshOrganizations } = useOrganizationWorkspace();
@@ -82,6 +81,7 @@ export const Dashboard = () => {
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [signalsError, setSignalsError] = useState('');
+  const [signalsRetryCount, setSignalsRetryCount] = useState(0);
   const organization = currentOrganization;
   const isWorkspace = Boolean(organizationId);
   const memberCount = organization?.members?.length ?? 0;
@@ -117,15 +117,30 @@ export const Dashboard = () => {
       setSignalsError('');
 
       try {
-        const [logRecords, meetingRecords, contributionRecords, loanRecords, claimRecords] = await Promise.all([
-          organizationService.listAuditLogs(organization.id).catch(() => []),
-          organizationService.listMeetings(organization.id).catch(() => []),
-          organizationService.listContributions(organization.id).catch(() => null),
-          organizationService.listLoans(organization.id).catch(() => []),
-          organizationService.listWelfareClaims(organization.id).catch(() => []),
+        const [activityResult, meetingsResult, contributionsResult, loansResult, claimsResult] = await Promise.allSettled([
+          organizationService.listAuditLogs(organization.id),
+          organizationService.listMeetings(organization.id),
+          organizationService.listContributions(organization.id),
+          organizationService.listLoans(organization.id),
+          organizationService.listWelfareClaims(organization.id),
         ]);
 
         if (!active) return;
+
+        const failures = [
+          activityResult.status === 'rejected' ? 'recent activity' : null,
+          meetingsResult.status === 'rejected' ? 'meetings' : null,
+          contributionsResult.status === 'rejected' ? 'contributions' : null,
+          loansResult.status === 'rejected' ? 'loans' : null,
+          claimsResult.status === 'rejected' ? 'welfare claims' : null,
+        ].filter((label): label is string => label !== null);
+        setSignalsError(failures.length ? `Could not load ${failures.join(', ')}. Some dashboard information may be incomplete.` : '');
+
+        const logRecords = activityResult.status === 'fulfilled' ? activityResult.value : [];
+        const meetingRecords = meetingsResult.status === 'fulfilled' ? meetingsResult.value : [];
+        const contributionRecords = contributionsResult.status === 'fulfilled' ? contributionsResult.value : null;
+        const loanRecords = loansResult.status === 'fulfilled' ? loansResult.value : [];
+        const claimRecords = claimsResult.status === 'fulfilled' ? claimsResult.value : [];
 
         setRecentActivity(
           logRecords.slice(0, 4).map((log) => ({
@@ -164,7 +179,7 @@ export const Dashboard = () => {
     return () => {
       active = false;
     };
-  }, [organization?.id]);
+  }, [organization?.id, signalsRetryCount]);
 
   const smartInsights = useMemo(() => {
     if (!organization) return null;
@@ -468,9 +483,10 @@ export const Dashboard = () => {
               <Link to={ROUTES.chama.reports(organization.id)}>View all</Link>
             </div>
             {signalsError ? (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[var(--ds-radius-lg)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+              <div className="mb-3 flex items-center gap-3 rounded-[var(--ds-radius-lg)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+                <TriangleAlert className="h-4 w-4 shrink-0" />
                 <span>{signalsError}</span>
-                <Button variant="outline" onClick={() => window.location.reload()} startIcon={<RefreshCw className="h-4 w-4" />}>Retry</Button>
+                <Button className="ml-auto shrink-0" variant="outline" onClick={() => setSignalsRetryCount((count) => count + 1)} startIcon={<RefreshCw className="h-4 w-4" />}>Retry</Button>
               </div>
             ) : null}
             <div className="chama360-activity-list chama360-dashboard-activity-list">
@@ -746,9 +762,9 @@ export const Dashboard = () => {
             <p className="text-sm text-[var(--ds-text-muted)]">Quick actions</p>
             <h2 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Fast access</h2>
             <div className="mt-5 space-y-3">
-              {enabledModules.loans ? <QuickAction label="Open loans" description="Review approvals and balances." icon={<Archive className="h-5 w-5" />} onClick={() => navigate(organization ? ROUTES.chama.loans(organization.id) : ROUTES.app.myChamas)} /> : null}
-              <QuickAction label="Meetings" description="Plan the next gathering." icon={<CalendarDays className="h-5 w-5" />} onClick={() => navigate(organization ? ROUTES.chama.meetings(organization.id) : ROUTES.more.meetings)} />
-              <QuickAction label="Welfare claims" description="Handle support requests." icon={<Heart className="h-5 w-5" />} onClick={() => navigate(organization ? ROUTES.chama.welfare(organization.id) : ROUTES.app.myChamas)} />
+              {enabledModules.loans ? <QuickAction label="Open loans" description="Review approvals and balances." icon={<Archive className="h-5 w-5" />} /> : null}
+              <QuickAction label="Meetings" description="Plan the next gathering." icon={<CalendarDays className="h-5 w-5" />} />
+              <QuickAction label="Welfare claims" description="Handle support requests." icon={<Heart className="h-5 w-5" />} />
             </div>
           </Card>
 

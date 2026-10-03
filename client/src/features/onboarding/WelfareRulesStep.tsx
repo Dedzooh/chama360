@@ -32,7 +32,7 @@ export const WelfareRulesStep = () => {
   };
 
   const addCustomBenefit = () => {
-    const key = `CUSTOM_${rules.categories.length + 1}`;
+    const key = `CUSTOM_${Date.now()}`;
     patchRules({ categories: [...rules.categories, { key, label: 'Custom benefit', enabled: true, limit: rules.maxClaimAmount, documents: [] }] });
   };
 
@@ -40,8 +40,8 @@ export const WelfareRulesStep = () => {
 
   return (
     <WizardStepFrame
-      title="Welfare Rules"
-      subtitle="Configure support rules for member claims."
+      title="Welfare support setup"
+      subtitle="Set how members contribute to the support fund, what they can claim, and who reviews each request."
       backTo={getWizardRouteBefore('welfare_rules', draft.enabledModules)}
       nextTo={ROUTES.createChama.committee}
       primaryLabel="Next"
@@ -50,7 +50,7 @@ export const WelfareRulesStep = () => {
         <div className="h-1.5 bg-gradient-to-r from-[var(--ds-primary)] via-[var(--ds-secondary)] to-[var(--ds-accent)]" />
         <div className="grid gap-4 p-5 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">Welfare module</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[var(--ds-text-muted)]">Member support</p>
             <h3 className="mt-2 text-xl font-black text-[var(--ds-secondary)]">{welfareEnabled ? 'Enabled for this chama' : 'Disabled for this chama'}</h3>
             <p className="mt-1 text-sm text-[var(--ds-text-muted)]">
               These settings define contribution expectations, claim categories, limits, evidence, and approval flow.
@@ -63,12 +63,12 @@ export const WelfareRulesStep = () => {
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="p-4">
           <HeartHandshake className="h-5 w-5 text-[var(--ds-primary)]" />
-          <p className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">Monthly amount</p>
+          <p className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">Monthly member contribution</p>
           <p className="mt-2 text-2xl font-black text-[var(--ds-secondary)]">KES {rules.monthlyContribution.toLocaleString()}</p>
         </Card>
         <Card className="p-4">
           <ShieldCheck className="h-5 w-5 text-[var(--ds-primary)]" />
-          <p className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">Max claim</p>
+          <p className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">Maximum support per claim</p>
           <p className="mt-2 text-2xl font-black text-[var(--ds-secondary)]">KES {rules.maxClaimAmount.toLocaleString()}</p>
         </Card>
         <Card className="p-4">
@@ -78,23 +78,23 @@ export const WelfareRulesStep = () => {
         </Card>
         <Card className="p-4">
           <BellRing className="h-5 w-5 text-[var(--ds-primary)]" />
-          <p className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">Reminder day</p>
+          <p className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">Monthly reminder day</p>
           <p className="mt-2 text-2xl font-black text-[var(--ds-secondary)]">{rules.reminderDay}</p>
         </Card>
       </div>
 
       <Card className="p-5">
-        <p className="text-sm text-[var(--ds-text-muted)]">Core rules</p>
-        <h3 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Claim and contribution setup</h3>
+        <p className="text-sm text-[var(--ds-text-muted)]">Main rules</p>
+        <h3 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Contributions and claim limits</h3>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <TextField
-            label="Monthly welfare contribution"
+            label="Each member contributes monthly (KES)"
             type="number"
             min="0"
             value={rules.monthlyContribution}
             onChange={(event) => patchRules({ monthlyContribution: Number(event.target.value) })}
           />
-          <TextField label="Maximum claim amount" type="number" min="0" value={rules.maxClaimAmount} onChange={(event) => patchRules({ maxClaimAmount: Number(event.target.value) })} />
+          <TextField label="Maximum support per claim (KES)" type="number" min="0" value={rules.maxClaimAmount} onChange={(event) => patchRules({ maxClaimAmount: Number(event.target.value) })} />
           <TextField
             label="Waiting period before first claim"
             type="number"
@@ -103,8 +103,8 @@ export const WelfareRulesStep = () => {
             helperText="Number of days a new member must wait before claiming."
             onChange={(event) => patchRules({ waitingPeriodDays: Number(event.target.value) })}
           />
-          <TextField label="Monthly reminder day" type="number" min="1" max="28" value={rules.reminderDay} onChange={(event) => patchRules({ reminderDay: Number(event.target.value) })} />
-          <SelectField label="Approval model" value={rules.approvalMode} onChange={(event) => patchRules({ approvalMode: event.target.value as WelfareRulesConfig['approvalMode'] })}>
+          <TextField label="Day of month for payment reminders" helperText="Choose a day from 1 to 28." type="number" min="1" max="28" value={rules.reminderDay} onChange={(event) => patchRules({ reminderDay: Number(event.target.value) })} />
+          <SelectField label="Who reviews welfare claims?" value={rules.approvalMode} onChange={(event) => patchRules({ approvalMode: event.target.value as WelfareRulesConfig['approvalMode'] })}>
             {WELFARE_APPROVAL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -125,25 +125,24 @@ export const WelfareRulesStep = () => {
       </Card>
 
       <Card className="p-5">
-        <p className="text-sm text-[var(--ds-text-muted)]">Categories</p>
-        <h3 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Claim category rules</h3>
-        <button type="button" onClick={addCustomBenefit} className="btn btn-outline mt-4"><Plus className="h-4 w-4" /> Add custom benefit</button>
+        <p className="text-sm text-[var(--ds-text-muted)]">Support types</p>
+        <h3 className="mt-1 text-xl font-black text-[var(--ds-secondary)]">Types of support members can request</h3>
+        <button type="button" onClick={addCustomBenefit} className="btn btn-outline mt-4"><Plus className="h-4 w-4" /> Add support type</button>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {rules.categories.map((category) => (
             <div key={category.key} className="rounded-[1.15rem] border border-[var(--ds-border)] bg-white p-4 shadow-[var(--ds-shadow-soft)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--ds-text-muted)]">{category.key}</p>
                   <h4 className="mt-1 text-lg font-black text-[var(--ds-secondary)]">{category.label}</h4>
                 </div>
-                <input type="checkbox" checked={category.enabled} onChange={(event) => patchCategory(category.key, { enabled: event.target.checked })} />
+                <input type="checkbox" aria-label={`Allow ${category.label} claims`} checked={category.enabled} onChange={(event) => patchCategory(category.key, { enabled: event.target.checked })} />
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <TextField label="Category label" value={category.label} onChange={(event) => patchCategory(category.key, { label: event.target.value })} />
-                <TextField label="Category limit" type="number" min="0" value={category.limit} onChange={(event) => patchCategory(category.key, { limit: Number(event.target.value) })} />
+                <TextField label="Name of this support type" value={category.label} onChange={(event) => patchCategory(category.key, { label: event.target.value })} />
+                <TextField label="Maximum amount for this type (KES)" type="number" min="0" value={category.limit} onChange={(event) => patchCategory(category.key, { limit: Number(event.target.value) })} />
               </div>
               <label className="mt-3 block">
-                <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Required documents</span>
+                <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Proof members must provide</span>
                 <input
                   value={documentsToText(category.documents)}
                   onChange={(event) => patchCategory(category.key, { documents: textToDocuments(event.target.value) })}

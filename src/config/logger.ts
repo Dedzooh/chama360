@@ -35,8 +35,8 @@ const personalKey = /(email|phone|address|street|postalCode|ip|ipAddress|userAge
 
 const redactLogValue = (value: unknown, seen = new WeakSet<object>()): unknown => {
   if (!value || typeof value !== 'object' || value instanceof Date || Buffer.isBuffer(value)) return value;
-  if (seen.has(value)) return '[CIRCULAR]';
-  seen.add(value);
+  if (seen.has(value as object)) return '[CIRCULAR]';
+  seen.add(value as object);
 
   if (Array.isArray(value)) {
     value.forEach((item, index) => { value[index] = redactLogValue(item, seen); });

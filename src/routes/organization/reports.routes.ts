@@ -77,25 +77,22 @@ export function registerReportsRoutes(router: Router, context: ReportsRouteConte
         throw new ForbiddenError('Only authorized finance roles can view financial exceptions');
       }
 
-      const [transactions, callbacks] = await Promise.all([
-        db.transaction.findMany({
-          where: {
-            organizationId: id,
-            status: { in: ['RECONCILIATION_REQUIRED', 'FAILED', 'PENDING'] },
-          },
-          include: {
-            fromMember: { select: { id: true, firstName: true, lastName: true, email: true } },
-            toMember: { select: { id: true, firstName: true, lastName: true, email: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 200,
-        }),
-        db.mpesaCallbackInbox.findMany({
-          where: { status: { in: ['PENDING', 'PROCESSING'] } },
-          orderBy: { receivedAt: 'desc' },
-          take: 200,
-        }),
-      ]);
+      const transactions = await db.transaction.findMany({
+        where: {
+          organizationId: id,
+          status: 'RECONCILIATION_REQUIRED',
+          metadata: { path: ['reconciliationRequired'], equals: true },
+        },
+        include: {
+          fromMember: { select: { id: true, firstName: true, lastName: true, email: true } },
+          toMember: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      const callbackTransactions = await db.transaction.findMany({ where: { organizationId: id, status: 'PENDING', metadata: { path: ['paymentMethod'], equals: 'MPESA' } }, select: { idempotencyKey: true } });
+      const checkoutRequestIds = callbackTransactions.filter((item: any) => item.idempotencyKey.startsWith('MPESA:')).map((item: any) => String(item.idempotencyKey).replace(/^MPESA:/, ''));
+      const callbacks = checkoutRequestIds.length ? await db.mpesaCallbackInbox.findMany({ where: { status: { in: ['PENDING', 'PROCESSING'] }, checkoutRequestId: { in: checkoutRequestIds } }, orderBy: { receivedAt: 'desc' }, take: 200 }) : [];
 
       const exceptions = transactions.map((transaction: any) => {
         const metadata = transaction.metadata && typeof transaction.metadata === 'object' ? transaction.metadata : {};
@@ -118,11 +115,15 @@ export function registerReportsRoutes(router: Router, context: ReportsRouteConte
         return {
           id: transaction.id,
           source: 'TRANSACTION',
+          isActionable: true,
           type,
           status: transaction.status,
           amount: transaction.amount,
           reference: transaction.reference,
           member: transaction.fromMember ?? transaction.toMember,
+          phoneNumber: metadata.phoneNumber ?? null,
+          contributionId: metadata.contributionId ?? null,
+          mpesaReceiptNumber: metadata.mpesaReceiptNumber ?? null,
           reason: reasons.length ? reasons.join(', ') : metadata.reconciliationError ?? metadata.reason ?? 'Requires finance review',
           createdAt: transaction.createdAt,
           metadata,
@@ -134,16 +135,23 @@ export function registerReportsRoutes(router: Router, context: ReportsRouteConte
         id: callback.id,
         source: 'MPESA_CALLBACK',
         type: new Date(callback.receivedAt).getTime() < staleThreshold ? 'STALE_STK_REQUEST' : 'PENDING_WEBHOOK_PROCESSING',
+        isActionable: false,
         status: callback.status,
         amount: null,
         reference: callback.checkoutRequestId,
         member: null,
+        phoneNumber: null,
+        contributionId: null,
+        mpesaReceiptNumber: null,
         reason: callback.lastError ?? 'M-Pesa callback is awaiting processing',
         createdAt: callback.receivedAt,
         metadata: { attempts: callback.attempts, nextAttemptAt: callback.nextAttemptAt },
       }));
 
-      res.json({ exceptions: [...exceptions, ...pendingCallbacks] });
+      const contributions = [...new Set(transactions.map((transaction: any) => (transaction.metadata as any)?.contributionId).filter(Boolean))];
+      const validContributions = contributions.length ? await db.contribution.findMany({ where: { id: { in: contributions }, organizationId: id }, select: { id: true } }) : [];
+      const validContributionIds = new Set(validContributions.map((contribution: any) => contribution.id));
+      res.json({ exceptions: [...exceptions.map((item: any) => ({ ...item, contributionId: validContributionIds.has(item.contributionId) ? item.contributionId : null })), ...pendingCallbacks] });
     }),
   );
 
@@ -157,7 +165,7 @@ export function registerReportsRoutes(router: Router, context: ReportsRouteConte
       }
 
       const { id } = req.params as { id: string };
-      const access = await getOrganizationAccess(id, req.user.id);
+      const access = await getOrganizationAccess(id, req.user.id as string);
       if (!canViewAllFinancials(access) && !hasOrganizationPermission(access, 'VIEW_AUDIT_LOGS')) {
         throw new ForbiddenError('Only authorized finance and audit roles can view audit logs');
       }

@@ -4,7 +4,6 @@ import { ROUTES } from '../config/routes';
 
 interface BottomNavProps {
   activeOrganizationId?: string;
-  pendingApprovalsCount?: number;
   onMoreToggle: () => void;
   onQuickAction: () => void;
 }
@@ -91,7 +90,7 @@ export const BottomNav = ({ activeOrganizationId, onMoreToggle, onQuickAction }:
 
               if (item.value === 'more') {
                 return (
-                  <button key={item.value} type="button" onClick={onMoreToggle} className={`${baseClass} ${activeClass}`} aria-pressed={active}>
+                  <button key={item.value} type="button" onClick={onMoreToggle} className={`${baseClass} ${activeClass}`}>
                     {icon}
                     {labelNode}
                   </button>
@@ -99,12 +98,7 @@ export const BottomNav = ({ activeOrganizationId, onMoreToggle, onQuickAction }:
               }
 
               return (
-                <Link
-                  key={item.value}
-                  to={item.to!}
-                  className={`${baseClass} ${activeClass}`}
-                  aria-current={active ? 'page' : undefined}
-                >
+                <Link key={item.value} to={item.to!} className={`${baseClass} ${activeClass}`}>
                   {icon}
                   {labelNode}
                 </Link>

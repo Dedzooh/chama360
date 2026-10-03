@@ -40,6 +40,7 @@ export const recordPaymentSchema = z.object({
   exchangeRate: z.number()
     .positive('Exchange rate must be positive')
     .optional(), // For currency conversion tracking
+  existingTransactionId: z.string().cuid().optional(),
 });
 
 // Update contribution schema

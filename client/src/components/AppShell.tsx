@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Activity, AlertTriangle, ArrowLeft, Bell, CalendarDays, CheckSquare, Crown, FileText, HeartHandshake, LineChart, LogOut, Menu, Plus, QrCode, RefreshCw, Settings, ShieldCheck, Upload, UserCircle2, UserPlus, Vote, Wallet } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, Bell, CalendarDays, CheckSquare, Crown, FileText, Flag, HeartHandshake, LineChart, LogOut, Menu, Plus, QrCode, RefreshCw, Settings, ShieldCheck, Upload, UserCircle2, UserPlus, Vote, Wallet } from 'lucide-react';
 import { BottomSheet, Button, IconButton } from '../design-system';
 import { BottomNav } from './BottomNav';
 import { BrandLockup, BrandMark } from './BrandLogo';
@@ -149,6 +149,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
     ...(activeOrganizationId ? [{ label: 'Members', to: ROUTES.chama.members(activeOrganizationId), icon: UserCircle2, tone: 'green' as const }] : []),
     ...(activeOrganizationId && currentOrganization?.enabledModules?.welfare ? [{ label: 'Welfare', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' as const }] : []),
     ...(activeOrganizationId ? [{ label: 'Reports', to: ROUTES.chama.reports(activeOrganizationId), icon: ShieldCheck, tone: 'purple' as const }] : []),
+    ...(activeOrganizationId ? [{ label: 'Disputes', to: ROUTES.chama.disputes(activeOrganizationId), icon: Flag, tone: 'rose' as const }] : []),
     ...(activeOrganizationId ? [{ label: 'Meetings', to: ROUTES.chama.meetings(activeOrganizationId), icon: CalendarDays, tone: 'green-soft' as const }] : []),
     ...(currentOrganization?.enabledModules?.voting && activeOrganizationId ? [{ label: 'Voting', to: ROUTES.chama.voting(activeOrganizationId), icon: Vote, tone: 'gold' as const }] : []),
     { label: 'Profile', to: ROUTES.app.profile, icon: UserCircle2, tone: 'green' },
@@ -173,6 +174,7 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
         { label: 'Contributions', to: ROUTES.chama.contributions(activeOrganizationId), icon: Wallet, tone: 'emerald' },
         { label: 'Welfare', to: ROUTES.chama.welfare(activeOrganizationId), icon: HeartHandshake, tone: 'pink' },
         { label: 'Approvals', to: ROUTES.chama.approvals(activeOrganizationId), icon: CheckSquare, tone: 'gold' },
+        { label: 'Disputes', to: ROUTES.chama.disputes(activeOrganizationId), icon: Flag, tone: 'rose' },
         ...(canUseMpesaAdmin ? [{ label: 'Financial Exceptions', to: ROUTES.chama.financialExceptions(activeOrganizationId), icon: AlertTriangle, tone: 'rose' }] : []),
         { label: 'Reports', to: ROUTES.chama.reports(activeOrganizationId), icon: ShieldCheck, tone: 'purple' },
       ]

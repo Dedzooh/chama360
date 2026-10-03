@@ -43,11 +43,77 @@ const schedulerInstanceId = randomUUID();
 const runScheduledJob = async (name: string, operation: () => Promise<unknown>, leaseSeconds: number): Promise<void> => {
   const key = `scheduler:chama360:${name}`;
   if (!await RedisService.setIfAbsent(key, schedulerInstanceId, leaseSeconds)) return;
+  const startedAt = new Date();
   try {
+    try {
+      await prisma.scheduledTaskHealth.upsert({
+        where: { taskName: name },
+        create: { taskName: name, status: 'RUNNING', lastStartedAt: startedAt },
+        update: { status: 'RUNNING', lastStartedAt: startedAt, lastError: null },
+      });
+    } catch (error) {
+      logger.error(`${name} scheduler status could not be recorded`, { error });
+    }
     await operation();
+    try {
+      await prisma.scheduledTaskHealth.update({
+        where: { taskName: name },
+        data: { status: 'HEALTHY', lastCompletedAt: new Date(), lastError: null, consecutiveFailures: 0 },
+      });
+    } catch (error) {
+      logger.error(`${name} scheduler success could not be recorded`, { error });
+    }
+  } catch (error) {
+    try {
+      await prisma.scheduledTaskHealth.update({
+        where: { taskName: name },
+        data: {
+          status: 'FAILED',
+          lastCompletedAt: new Date(),
+          lastError: error instanceof Error ? error.message.slice(0, 2000) : 'Unknown scheduler error',
+          consecutiveFailures: { increment: 1 },
+        },
+      });
+    } catch (statusError) {
+      logger.error(`${name} scheduler failure could not be recorded`, { error: statusError });
+    }
+    throw error;
   } finally {
     await RedisService.releaseIfOwned(key, schedulerInstanceId);
   }
+};
+
+const startBackgroundJobs = (): void => {
+  const run = (name: string, operation: () => Promise<unknown>, leaseSeconds: number): void => {
+    void runScheduledJob(name, operation, leaseSeconds).catch((error) => logger.error(`${name} background job failed`, { error }));
+  };
+
+  const subscriptionTimer = setInterval(() => run('subscriptions', () => subscriptionLifecycleService.reconcileAll(), 3600), 60 * 60 * 1000);
+  subscriptionTimer.unref();
+  const notificationTimer = setInterval(() => run('notifications', () => notificationDeliveryService.processPending(), 300), 60 * 1000);
+  notificationTimer.unref();
+  const mpesaCallbackTimer = setInterval(() => run('mpesa-callbacks', () => mpesaService.processPendingCallbacks().then(() => undefined), 60), 10 * 1000);
+  mpesaCallbackTimer.unref();
+  const contributionTimer = setInterval(() => run('monthly-contributions', () => monthlyContributionService.reconcile(), 3600), 60 * 60 * 1000);
+  contributionTimer.unref();
+  const penaltyTimer = setInterval(() => run('penalties', () => contributionPenaltyService.reconcile(), 3600), 60 * 60 * 1000);
+  penaltyTimer.unref();
+  const reminderTimer = setInterval(() => run('reminders', () => contributionReminderService.reconcile(), 3600), 60 * 60 * 1000);
+  reminderTimer.unref();
+
+  if (config.security.accountDeletionGraceDays !== undefined) {
+    const deletionTimer = setInterval(() => run('account-deletion', () => accountDeletionService.anonymizeDueAccounts(), 3600), 60 * 60 * 1000);
+    deletionTimer.unref();
+    run('account-deletion', () => accountDeletionService.anonymizeDueAccounts(), 3600);
+  }
+
+  run('subscriptions', () => subscriptionLifecycleService.reconcileAll(), 3600);
+  run('billing-backfill', () => billingDocumentService.backfill(), 3600);
+  run('notifications', () => notificationDeliveryService.processPending(), 300);
+  run('monthly-contributions', () => monthlyContributionService.reconcile(), 3600);
+  run('penalties', () => contributionPenaltyService.reconcile(), 3600);
+  run('reminders', () => contributionReminderService.reconcile(), 3600);
+  run('mpesa-callbacks', () => mpesaService.processPendingCallbacks().then(() => undefined), 60);
 };
 
 app.set('etag', false);
@@ -211,39 +277,13 @@ const startServer = async () => {
     await prisma.$connect();
     logger.info('Database connected successfully');
     await redis.ping();
-    await runScheduledJob('subscriptions', () => subscriptionLifecycleService.reconcileAll(), 3600);
-    await runScheduledJob('billing-backfill', () => billingDocumentService.backfill(), 3600);
-    await runScheduledJob('notifications', () => notificationDeliveryService.processPending(), 300);
-    await runScheduledJob('monthly-contributions', () => monthlyContributionService.reconcile(), 3600);
-    await runScheduledJob('penalties', () => contributionPenaltyService.reconcile(), 3600);
-    await runScheduledJob('reminders', () => contributionReminderService.reconcile(), 3600);
-    if (config.security.accountDeletionGraceDays !== undefined) {
-      await runScheduledJob('account-deletion', () => accountDeletionService.anonymizeDueAccounts(), 3600);
-    }
-    const subscriptionTimer = setInterval(() => void runScheduledJob('subscriptions', () => subscriptionLifecycleService.reconcileAll(), 3600).catch((error) => logger.error('Subscription reconciliation failed', { error })), 60 * 60 * 1000);
-    subscriptionTimer.unref();
-    const notificationTimer = setInterval(() => void runScheduledJob('notifications', () => notificationDeliveryService.processPending(), 300).catch((error) => logger.error('Notification delivery failed', { error })), 60 * 1000);
-    const mpesaCallbackTimer = setInterval(() => void runScheduledJob('mpesa-callbacks', () => mpesaService.processPendingCallbacks().then(() => undefined), 60).catch((error) => logger.error('M-Pesa callback inbox processing failed', { error })), 10 * 1000);
-    mpesaCallbackTimer.unref();
-    void runScheduledJob('mpesa-callbacks', () => mpesaService.processPendingCallbacks().then(() => undefined), 60).catch((error) => logger.error('Initial M-Pesa callback inbox processing failed', { error }));
-    notificationTimer.unref();
-    const contributionTimer = setInterval(() => void runScheduledJob('monthly-contributions', () => monthlyContributionService.reconcile(), 3600).catch((error) => logger.error('Monthly contribution reconciliation failed', { error })), 60 * 60 * 1000);
-    contributionTimer.unref();
-    const penaltyTimer = setInterval(() => void runScheduledJob('penalties', () => contributionPenaltyService.reconcile(), 3600).catch((error) => logger.error('Contribution penalty reconciliation failed', { error })), 60 * 60 * 1000);
-    penaltyTimer.unref();
-    const reminderTimer = setInterval(() => void runScheduledJob('reminders', () => contributionReminderService.reconcile(), 3600).catch((error) => logger.error('Contribution reminder reconciliation failed', { error })), 60 * 60 * 1000);
-    reminderTimer.unref();
-    if (config.security.accountDeletionGraceDays !== undefined) {
-      const deletionTimer = setInterval(() => void runScheduledJob('account-deletion', () => accountDeletionService.anonymizeDueAccounts(), 3600).catch((error) => logger.error('Account anonymization failed', { error })), 60 * 60 * 1000);
-      deletionTimer.unref();
-    }
-    
     logger.info('Redis connected successfully');
     
     // Start HTTP server
     const server = app.listen(config.server.port, config.server.host, () => {
       logger.info(`Server running on ${config.server.host}:${config.server.port} in ${config.server.nodeEnv} mode`);
       logger.info(`API version: ${config.server.apiVersion}`);
+      startBackgroundJobs();
     });
     
     // Handle server errors
