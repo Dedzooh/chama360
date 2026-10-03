@@ -5,7 +5,7 @@ import { requireSubscriptionFeature } from '../../middleware/subscription';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { subscriptionPlans } from '../../config/subscriptions';
 export function registerSettingsRoutes(router: Router, context: any): void {
-  const { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, hasOrganizationPermission, updateOrganizationLifecycle, writeOrganizationAudit, auditLog } = context;
+  const { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, updateOrganizationLifecycle, writeOrganizationAudit, auditLog } = context;
 router.get('/invites/:token', asyncHandler(async (req: Request, res: Response) => {
   const token = inviteTokenSchema.parse(req.params.token);
   const organization = await db.organization.findUnique({
@@ -246,11 +246,9 @@ router.get(
 router.get('/:id/invite-link', authenticate, asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
   const access = await getOrganizationAccess(id, req.user!.id);
-  // Ownership is independent of the member role: the chama creator may hold an
-  // officer role (Treasurer/Chair/etc.) and still has invite rights.
-  const ownerCheck = await db.organization.findUnique({ where: { id }, select: { createdById: true } });
-  const isCreator = ownerCheck?.createdById === req.user!.id;
-  if (!isCreator && !isOwnerLike(access.role?.name ?? '') && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
+  // Ownership is independent of the member role: the chama creator keeps
+  // invite rights even when holding an officer role.
+  if (!isOwnerLikeAccess(access) && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
     throw new ForbiddenError('Insufficient permissions to invite members');
   }
   await db.organization.updateMany({ where: { id, inviteToken: null }, data: { inviteToken: randomUUID() } });
@@ -304,9 +302,8 @@ router.get(
     const roleName = access.role?.name ?? 'MEMBER';
     // Ownership is independent of role: the creator is always owner-like even
     // when holding an officer role (Treasurer/Chair/etc.).
-    const isCreator = organizationRecord?.createdById === req.user?.id;
-    const effectiveRole = isCreator && !isOwnerLike(roleName) ? roleName : roleName;
-    const canViewContacts = isOwnerLike(roleName) || isCreator || ['TREASURER', 'SECRETARY'].includes(roleName) || hasOrganizationPermission(access, 'VIEW_MEMBER_CONTACTS');
+    const isCreator = isOwnerLikeAccess(access);
+    const canViewContacts = isOwnerLikeAccess(access) || ['TREASURER', 'SECRETARY'].includes(roleName) || hasOrganizationPermission(access, 'VIEW_MEMBER_CONTACTS');
     const safeOrganization = organizationRecord ? { ...organizationRecord, inviteToken: undefined, members: organizationRecord.members.map((member: any) => ({ ...member, user: canViewContacts || member.userId === req.user!.id ? member.user : { ...member.user, email: null, phone: null } })) } : organizationRecord;
     res.json({ organization: safeOrganization, myRole: roleName, myRoleLabel: access.role?.label ?? 'Member', isOwner: isCreator });
   })

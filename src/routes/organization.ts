@@ -5,7 +5,7 @@ import { runFinancialTransaction } from '../services/financialTransactionService
 import { updateOrganizationLifecycle as transitionOrganizationLifecycle } from '../services/organizationLifecycleService';
 import { enforceWelfareEligibility as validateWelfareEligibility } from '../services/welfareEligibilityService';
 import { writeOrganizationAudit as persistOrganizationAudit } from '../services/organizationAuditService';
-import { OrganizationPermission, isOwnerLike, hasOrganizationPermission, isFinanceManager, canViewAllFinancials, isWelfareApprover, isMeetingManager, isVoteManager, canManageOrganizationLifecycle, getRequiredGuarantorCount, getRuleNumber, resolveWelfareApprovalPolicy } from '../services/organizationPolicyService';
+import { OrganizationPermission, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, isFinanceManager, canViewAllFinancials, isWelfareApprover, isMeetingManager, isVoteManager, canManageOrganizationLifecycle, getRequiredGuarantorCount, getRuleNumber, resolveWelfareApprovalPolicy } from '../services/organizationPolicyService';
 import { organizationCreateSchema, organizationUpdateSchema, memberCreateSchema, memberUpdateSchema } from '../schemas/organization';
 import { contributionCreateSchema, markContributionPaidSchema, reverseContributionSchema, loanApplySchema, guaranteeDecisionSchema, loanRepaySchema, investmentAssetSchema, welfareCreateSchema, welfareTransitionSchema, meetingCreateSchema, meetingUpdateSchema, attendanceSchema, voteCreateSchema, voteResponseSchema, paymentProofSubmitSchema, paymentProofDecisionSchema } from '../schemas/organizationWorkflows';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../middleware/errorHandler';
@@ -38,7 +38,10 @@ async function getOrganizationAccess(organizationId: string, userId: string) {
   if (!membership || membership.status !== 'ACTIVE') {
     throw new ForbiddenError('Active membership required for this organization');
   }
-  return membership;
+  // Ownership is independent of role: the chama creator keeps every owner
+  // privilege even when holding an officer role (Chairperson, Treasurer,
+  // Secretary, etc.). Every permission helper receives this flag.
+  return Object.assign(membership, { isCreator: membership.organization?.createdById === userId });
 }
 
 async function requireAcceptedLoanGuarantees(loanId: string, requiredGuarantors = 1) {
@@ -71,7 +74,7 @@ import { registerVotingRoutes } from './organization/voting.routes';
 const writeOrganizationAudit = (params: Parameters<typeof persistOrganizationAudit>[1]) => persistOrganizationAudit(db, params);
 const enforceWelfareEligibility = (organizationId: string, memberId: string, claimType: string, amountRequested: number, documents: string[]) => validateWelfareEligibility(organizationId, memberId, claimType, amountRequested, documents, { requireOrganizationStatus, findMember: (organizationId, userId) => db.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } } }) });
 
-registerSettingsRoutes(router, { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, hasOrganizationPermission, updateOrganizationLifecycle: (params: Parameters<typeof transitionOrganizationLifecycle>[0]) => transitionOrganizationLifecycle(params, { requireOrganizationStatus, getOrganizationAccess, canManageOrganizationLifecycle, updateOrganization: async (organizationId, status) => db.organization.update({ where: { id: organizationId }, data: { status: status as any } }), writeAudit: writeOrganizationAudit }), writeOrganizationAudit, auditLog });
+registerSettingsRoutes(router, { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, updateOrganizationLifecycle: (params: Parameters<typeof transitionOrganizationLifecycle>[0]) => transitionOrganizationLifecycle(params, { requireOrganizationStatus, getOrganizationAccess, canManageOrganizationLifecycle, updateOrganization: async (organizationId, status) => db.organization.update({ where: { id: organizationId }, data: { status: status as any } }), writeAudit: writeOrganizationAudit }), writeOrganizationAudit, auditLog });
 registerMembersRoutes(router, { db, memberCreateSchema, memberUpdateSchema, getOrganizationAccess, hasOrganizationPermission, isOwnerLike, isFounderRole, requireOrganizationStatus, requireMemberCapacity, writeOrganizationAudit });
 registerContributionsRoutes(router, { db, contributionCreateSchema, markContributionPaidSchema, reverseContributionSchema, paymentProofSubmitSchema, paymentProofDecisionSchema, getOrganizationAccess, canViewAllFinancials, isFinanceManager, requireOrganizationStatus, runFinancialTransaction, writeOrganizationAudit });
 registerLoansRoutes(router, { db, loanApplySchema, guaranteeDecisionSchema, loanRepaySchema, OrganizationPermission, getOrganizationAccess, hasOrganizationPermission, isFinanceManager, isWelfareApprover, requireOrganizationStatus, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit });
@@ -80,6 +83,6 @@ registerMeetingsRoutes(router, { db, meetingCreateSchema, meetingUpdateSchema, a
 registerVotingRoutes(router, { db, voteCreateSchema, voteResponseSchema, getOrganizationAccess, hasOrganizationPermission, isMeetingManager, isVoteManager, requireOrganizationStatus, writeOrganizationAudit });
 registerInvestmentsRoutes(router, { db, investmentAssetSchema, getOrganizationAccess, canViewAllFinancials, isFinanceManager });
 registerReportsRoutes(router, { db, getOrganizationAccess, canViewAllFinancials, hasOrganizationPermission });
-registerOrganizationDocumentsRoutes(router, { db, getOrganizationAccess, isOwnerLike, writeOrganizationAudit });
+registerOrganizationDocumentsRoutes(router, { db, getOrganizationAccess, isOwnerLike, isOwnerLikeAccess, writeOrganizationAudit });
 
 export { router as organizationRouter };
