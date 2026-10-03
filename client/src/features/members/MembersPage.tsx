@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Archive, Mail, RefreshCw, Search, Shield, Trash2, UserCheck, UserPlus, Users } from 'lucide-react';
+import { Archive, Mail, RefreshCw, Shield, Trash2, UserCheck, UserPlus, Users } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { ROUTES } from '../../config/routes';
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
@@ -143,10 +143,6 @@ export const Members = () => {
             <p>Invite members, update roles, and keep access visible for every committee action.</p>
           </div>
           <div className="chama360-module-hero-actions">
-            <a href="#members-roster-mobile">
-              <Search className="h-4 w-4" />
-              Roster
-            </a>
             {canManageMembers ? <a href="#member-invite-mobile">
               <UserPlus className="h-4 w-4" />
               Invite
@@ -339,10 +335,6 @@ export const Members = () => {
             <p>Invite members, change roles, suspend access, and keep the roster current.</p>
           </div>
           <div className="chama360-module-hero-actions">
-            <a href="#members-roster">
-              <Search className="h-4 w-4" />
-              Roster
-            </a>
             {canManageMembers ? <a href="#member-invite">
               <UserPlus className="h-4 w-4" />
               Invite
