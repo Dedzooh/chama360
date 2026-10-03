@@ -4,6 +4,7 @@ import { authenticate, rateLimitSensitive } from '../../middleware/auth';
 import { requireSubscriptionFeature } from '../../middleware/subscription';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { subscriptionPlans } from '../../config/subscriptions';
+import { paymentSettingsUpdateSchema } from '../../schemas/organization';
 export function registerSettingsRoutes(router: Router, context: any): void {
   const { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, updateOrganizationLifecycle, writeOrganizationAudit, auditLog } = context;
 router.get('/invites/:token', asyncHandler(async (req: Request, res: Response) => {
@@ -321,11 +322,22 @@ router.patch(
     const { id } = req.params as { id: string };
     const access = await getOrganizationAccess(id, (req.user.id));
 
-    if (!hasOrganizationPermission(access, 'EDIT_ORGANIZATION') && !isOwnerLike((access.role)?.name || '')) {
+    // Owner/creator always; plus anyone holding EDIT_ORGANIZATION permission,
+    // plus finance officers (Treasurer/Secretary) who manage payment profiles.
+    const canUpdateOrganization = hasOrganizationPermission(access, 'EDIT_ORGANIZATION') || isOwnerLikeAccess(access) || ['TREASURER', 'SECRETARY'].includes(access.role?.name ?? '');
+    if (!canUpdateOrganization) {
       throw new ForbiddenError('Insufficient permissions to update organization');
     }
 
     const payload = organizationUpdateSchema.parse(req.body);
+    // Validate the treasurer's payment profile when it is being updated, so
+    // enabled methods and bank details persist with correct, checked values.
+    const incomingMetadata = (payload.metadata ?? {}) as Record<string, unknown>;
+    if (incomingMetadata.paymentSettings) {
+      const validatedPayment = paymentSettingsUpdateSchema.parse(incomingMetadata.paymentSettings);
+      incomingMetadata.paymentSettings = validatedPayment;
+      payload.metadata = incomingMetadata;
+    }
     const before = await db.organization.findUnique({ where: { id } });
     const updated = await db.organization.update({
       where: { id },
