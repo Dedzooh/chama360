@@ -10,15 +10,17 @@ import { Badge, Button, Card, EmptyState } from '../../design-system';
 const money = (value: number | string | undefined | null) => `KES ${Number(value ?? 0).toLocaleString()}`;
 const roleCanReview = ['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN'];
 
-type QueueKind = 'payments' | 'loans' | 'welfare' | 'members' | 'expenses' | 'reconciliation';
+type QueueKind = 'all' | 'payments' | 'loans' | 'welfare' | 'members';
 
+// Simplified approvals: one actionable list instead of a card maze. The two
+// placeholder queues (expenses, reconciliation) are hidden until real records
+// exist.
 const queueItems: Array<{ kind: QueueKind; label: string; description: string; icon: typeof Wallet; tone: string }> = [
+  { kind: 'all', label: 'All approvals', description: 'Everything waiting for a decision.', icon: Wallet, tone: 'green' },
   { kind: 'payments', label: 'Payment proofs', description: 'Member "I have paid" submissions to confirm.', icon: Banknote, tone: 'green' },
   { kind: 'loans', label: 'Loan applications', description: 'Credit requests waiting for a decision.', icon: Landmark, tone: 'blue' },
   { kind: 'welfare', label: 'Welfare claims', description: 'Member support requests requiring review.', icon: HandHeart, tone: 'pink' },
   { kind: 'members', label: 'Member requests', description: 'Join and access requests from members.', icon: Users, tone: 'green' },
-  { kind: 'expenses', label: 'Expense approval', description: 'Expenses queued for finance approval.', icon: Wallet, tone: 'gold' },
-  { kind: 'reconciliation', label: 'Reconciliation exceptions', description: 'Transactions needing finance attention.', icon: ShieldCheck, tone: 'purple' },
 ];
 
 const getDocuments = (claim: WelfareClaimRecord) => {
@@ -35,6 +37,7 @@ export const ApprovalsPage = () => {
   const [claims, setClaims] = useState<WelfareClaimRecord[]>([]);
   const [proofs, setProofs] = useState<PaymentProofRecord[]>([]);
   const [proofNote, setProofNote] = useState('');
+  const [proofsForbidden, setProofsForbidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +55,13 @@ export const ApprovalsPage = () => {
       setClaims(claimData);
       try {
         setProofs(await organizationService.listPaymentProofs(organizationId));
-      } catch {
+        setProofsForbidden(false);
+      } catch (proofError) {
+        // 403 means the role cannot see payment proofs — surface it instead of
+        // silently showing an empty list (users thought there was nothing to
+        // approve when the queue was actually hidden).
         setProofs([]);
+        setProofsForbidden((proofError as any)?.response?.status === 403);
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load approval queues.');
@@ -74,7 +82,10 @@ export const ApprovalsPage = () => {
   );
   const selectedClaim = kind === 'welfare' ? pendingClaims.find((claim) => claim.id === itemId) ?? claims.find((claim) => claim.id === itemId) : null;
   const selectedQueue = queueItems.find((item) => item.kind === kind) ?? null;
-  const canReview = roleCanReview.includes((currentOrganization?.myRole ?? '').toUpperCase());
+  // Creator-of-chama bypass (same rule as Members): ownership is independent
+  // of the member role.
+  const isCreator = Boolean((currentOrganization as any)?.isOwner);
+  const canReview = isCreator || roleCanReview.includes((currentOrganization?.myRole ?? '').toUpperCase());
   const walletBalance = currentOrganization?.wallet?.balance ?? currentOrganization?.balance ?? 0;
   const welfareRules = ((currentOrganization?.metadata ?? {}) as { welfareRules?: { approvalMode?: string; requireDocuments?: boolean } }).welfareRules;
   const requiredApprovals = welfareRules?.approvalMode === 'CHAIR_TREASURER' ? 'Chairperson and Treasurer' : welfareRules?.approvalMode === 'MEMBER_VOTE' ? 'Member vote' : 'Committee review';
@@ -116,12 +127,11 @@ export const ApprovalsPage = () => {
   }
 
   const counts: Record<QueueKind, number> = {
+    all: proofs.length + pendingLoans.length + pendingClaims.length + pendingMembers.length,
     payments: proofs.length,
     loans: pendingLoans.length,
     welfare: pendingClaims.length,
     members: pendingMembers.length,
-    expenses: 1,
-    reconciliation: 2,
   };
 
   return (
@@ -162,22 +172,22 @@ export const ApprovalsPage = () => {
       {error ? <Card className="border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">{error}</Card> : null}
 
       {!selectedClaim ? (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {queueItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link key={item.kind} to={ROUTES.chama.approvalQueue(currentOrganization.id, item.kind)} className="group rounded-[var(--ds-radius-xl)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-5 shadow-[var(--ds-shadow-card)] transition hover:-translate-y-0.5 hover:border-[var(--ds-primary)]">
-                <div className="flex items-start justify-between gap-4">
-                  <span className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--ds-surface-2)] text-[var(--ds-primary)]`}><Icon className="h-5 w-5" /></span>
-                  <span className="text-3xl font-black text-[var(--ds-secondary)]">{loading ? '...' : counts[item.kind]}</span>
-                </div>
-                <h2 className="mt-5 text-lg font-black text-[var(--ds-secondary)]">{item.label}</h2>
-                <p className="mt-1 text-sm text-[var(--ds-text-muted)]">{item.description}</p>
-                <span className="mt-4 inline-flex text-sm font-bold text-[var(--ds-primary)]">Open queue</span>
-              </Link>
-            );
-          })}
-        </section>
+        <UnifiedQueueList
+          organizationId={currentOrganization.id}
+          loans={pendingLoans}
+          claims={pendingClaims}
+          members={pendingMembers}
+          proofs={proofs}
+          proofsForbidden={proofsForbidden}
+          activeKind={kind as QueueKind}
+          counts={counts}
+          canReview={canReview}
+          saving={saving}
+          proofNote={proofNote}
+          onProofNoteChange={setProofNote}
+          onReviewProof={reviewProof}
+          onReload={loadData}
+        />
       ) : (
         <section className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="space-y-3">
@@ -192,8 +202,7 @@ export const ApprovalsPage = () => {
 
           <div className="space-y-5">
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <div><p className="text-sm text-[var(--ds-text-muted)]">{selectedQueue?.label}</p><h2 className="mt-1 text-2xl font-black text-[var(--ds-secondary)]">{selectedClaim ? 'Welfare claim review' : 'Queue items'}</h2></div>
-              <Button variant="outline" onClick={() => void loadData()} startIcon={<RefreshCw className="h-4 w-4" />}>Refresh</Button>
+              <div><p className="text-sm text-[var(--ds-text-muted)]">{selectedQueue?.label}</p><h2 className="mt-1 text-2xl font-black text-[var(--ds-secondary)]">Welfare claim review</h2></div>
             </div>
 
             {selectedClaim ? (
@@ -271,6 +280,127 @@ const QueueList = ({ kind, loans, claims, members, proofs = [], organizationId, 
   if (kind === 'loans') return <div className="space-y-3">{loans.map((loan) => <Link key={loan.id} to={ROUTES.chama.loan(organizationId, loan.id)} className="block rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><span className="font-bold text-[var(--ds-secondary)]">{loan.borrower ? `${loan.borrower.firstName} ${loan.borrower.lastName}` : 'Borrower'}</span><Badge tone="warning">{money(loan.amountRequested)}</Badge></div><p className="mt-1 text-sm text-[var(--ds-text-muted)]">{loan.purpose ?? 'Loan application'} · Pending review</p></Link>)}{!loans.length ? <EmptyState title="No loan applications waiting" description="New pending applications will appear here." /> : null}</div>;
   if (kind === 'members') return <div className="space-y-3">{members.map((member) => <Link key={member.id} to={ROUTES.chama.members(organizationId)} className="block rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-4"><p className="font-bold text-[var(--ds-secondary)]">{member.user ? `${member.user.firstName ?? ''} ${member.user.lastName ?? ''}` : 'Member request'}</p><p className="mt-1 text-sm text-[var(--ds-text-muted)]">{member.status.replace('_', ' ')}</p></Link>)}{!members.length ? <EmptyState title="No member requests waiting" description="New join requests will appear here." /> : null}</div>;
   return <EmptyState title={kind === 'expenses' ? 'Expense approval queue' : 'Reconciliation exception queue'} description="This queue is ready for finance workflow integration. Items will appear when the corresponding records are available." />;
+};
+
+// Simplified approvals landing: filter chips + one merged actionable list.
+// Payments and member requests have inline one-click actions; welfare and
+// loans link to their detail views (documents/reasons matter there).
+const UnifiedQueueList = ({ organizationId, loans, claims, members, proofs = [], proofsForbidden, activeKind, counts, canReview, saving, proofNote, onProofNoteChange, onReviewProof, onReload }: {
+  organizationId: string;
+  loans: Loan[];
+  claims: WelfareClaimRecord[];
+  members: Array<{ id: string; status: string; user?: { firstName?: string; lastName?: string } | null }>;
+  proofs?: PaymentProofRecord[];
+  proofsForbidden?: boolean;
+  activeKind: QueueKind;
+  counts: Record<QueueKind, number>;
+  canReview?: boolean;
+  saving?: boolean;
+  proofNote?: string;
+  onProofNoteChange?: (value: string) => void;
+  onReviewProof?: (proofId: string, action: 'approve' | 'reject') => void;
+  onReload?: () => void;
+}) => {
+  type UnifiedRow = { key: string; category: Exclude<QueueKind, 'all'>; who: string; what: string; detail: string; when?: string; link?: string; inline?: 'payment-proof'; id?: string };
+  const rows: UnifiedRow[] = [
+    ...proofs.map((proof): UnifiedRow => ({
+      key: `proof-${proof.id}`,
+      category: 'payments',
+      who: proof.member ? `${proof.member.firstName ?? ''} ${proof.member.lastName ?? ''}`.trim() || 'Member' : 'Member',
+      what: 'Payment proof',
+      detail: `${money(proof.amount)} · ${proof.paymentMethod} · Ref ${proof.reference ?? '—'}`,
+      when: proof.submittedAt ? new Date(proof.submittedAt).toLocaleDateString('en-KE') : undefined,
+      inline: 'payment-proof',
+      id: proof.id,
+    })),
+    ...claims.map((claim): UnifiedRow => ({
+      key: `claim-${claim.id}`,
+      category: 'welfare',
+      who: claim.requestedBy ? `${claim.requestedBy.firstName} ${claim.requestedBy.lastName}` : 'Member',
+      what: claim.claimType ?? claim.type ?? 'Welfare claim',
+      detail: money(claim.amountRequested),
+      link: ROUTES.chama.approvalItem(organizationId, 'welfare', claim.id),
+    })),
+    ...loans.map((loan): UnifiedRow => ({
+      key: `loan-${loan.id}`,
+      category: 'loans',
+      who: loan.borrower ? `${loan.borrower.firstName} ${loan.borrower.lastName}` : 'Borrower',
+      what: 'Loan application',
+      detail: money(loan.amountRequested),
+      link: ROUTES.chama.loan(organizationId, loan.id),
+    })),
+    ...members.map((member): UnifiedRow => ({
+      key: `member-${member.id}`,
+      category: 'members',
+      who: member.user ? `${member.user.firstName ?? ''} ${member.user.lastName ?? ''}`.trim() || 'New member' : 'New member',
+      what: 'Member request',
+      detail: member.status.replace('_', ' '),
+      link: ROUTES.chama.members(organizationId),
+    })),
+  ];
+  const visible = activeKind === 'all' ? rows : rows.filter((row) => row.category === activeKind);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {queueItems.map((item) => {
+          const active = item.kind === activeKind;
+          return (
+            <Link
+              key={item.kind}
+              to={ROUTES.chama.approvalQueue(organizationId, item.kind)}
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition ${active ? 'border-[var(--ds-primary)] bg-[var(--ds-primary)] text-white' : 'border-[var(--ds-border)] bg-[var(--ds-surface)] text-[var(--ds-secondary)] hover:border-[var(--ds-primary)]'}`}
+            >
+              {item.label}
+              {item.kind !== 'all' ? <Badge tone={active ? 'neutral' : counts[item.kind] > 0 ? 'warning' : 'neutral'}>{counts[item.kind]}</Badge> : null}
+            </Link>
+          );
+        })}
+      </div>
+
+      {proofsForbidden && (activeKind === 'all' || activeKind === 'payments') ? (
+        <Card className="border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">
+          Payment proofs aren't visible to your role. Ask a Chairperson or Treasurer to review them, or update your role in Members.
+        </Card>
+      ) : null}
+
+      {visible.length ? (
+        <div className="divide-y divide-[var(--ds-border)] overflow-hidden rounded-[var(--ds-radius-xl)] border border-[var(--ds-border)] bg-[var(--ds-surface)]">
+          {visible.map((row) => (
+            <div key={row.key} className="flex flex-wrap items-center justify-between gap-3 p-4 transition hover:bg-[var(--ds-surface-2)]">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={row.category === 'payments' ? 'success' : row.category === 'welfare' ? 'warning' : row.category === 'loans' ? 'info' : 'neutral'}>{row.category.replace('_', ' ')}</Badge>
+                  <span className="font-bold text-[var(--ds-secondary)]">{row.who}</span>
+                  <span className="text-sm text-[var(--ds-text-muted)]">{row.what}</span>
+                </div>
+                <p className="mt-0.5 text-sm text-[var(--ds-text-muted)]">{row.detail}{row.when ? ` · ${row.when}` : ''}</p>
+              </div>
+              {row.inline === 'payment-proof' && row.id ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {canReview ? (
+                    <>
+                      <button type="button" disabled={saving} onClick={() => onReviewProof?.(row.id!, 'approve')} className="inline-flex items-center gap-1.5 rounded-[var(--ds-radius-lg)] bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><CheckCircle2 className="h-4 w-4" />Approve</button>
+                      <button type="button" disabled={saving} onClick={() => onReviewProof?.(row.id!, 'reject')} className="inline-flex items-center gap-1.5 rounded-[var(--ds-radius-lg)] border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><CircleX className="h-4 w-4" />Reject</button>
+                    </>
+                  ) : (
+                    <Badge tone="neutral">Read only</Badge>
+                  )}
+                </div>
+              ) : row.link ? (
+                <Link to={row.link} className="inline-flex items-center gap-1.5 rounded-[var(--ds-radius-lg)] border border-[var(--ds-border)] px-3 py-2 text-sm font-bold text-[var(--ds-primary)] transition hover:border-[var(--ds-primary)]">Review<ArrowRight className="h-4 w-4" /></Link>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title={activeKind === 'all' ? 'Nothing waiting for a decision' : 'No items in this queue'}
+          description="New member submissions appear here the moment they arrive."
+        />
+      )}
+    </div>
+  );
 };
 
 const StatementReconciler = ({ organizationId, onApplied }: { organizationId: string; onApplied: () => void }) => {
