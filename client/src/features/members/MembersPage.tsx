@@ -26,7 +26,12 @@ export const Members = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRoleId, setInviteRoleId] = useState('');
-  const canManageMembers = ['OWNER', 'FOUNDER', 'ADMIN'].includes((currentOrganization?.myRole ?? '').toUpperCase());
+  // The chama creator is always a member-manager regardless of which officer
+  // role they hold (Treasurer/Chairperson/etc.). Server sends `isOwner` on the
+  // org payload. Chairpersons also manage members (matches the backend's
+  // FOUNDER/CHAIR invite gate).
+  const isCreator = Boolean((currentOrganization as any)?.isOwner);
+  const canManageMembers = isCreator || ['OWNER', 'FOUNDER', 'ADMIN', 'CHAIR'].includes((currentOrganization?.myRole ?? '').toUpperCase());
 
   const loadData = async () => {
     if (!currentOrganization?.id) return;

@@ -27,6 +27,7 @@ export interface OrganizationDetail extends OrganizationSummary {
   members?: OrganizationMemberRecord[];
   myRole?: string;
   myRoleLabel?: string;
+  isOwner?: boolean;
 }
 
 export interface OrganizationMemberRecord {
@@ -300,7 +301,7 @@ export const organizationService = {
 
   getOrganization: async (id: string): Promise<OrganizationDetail> => {
     const response = await api.get(`/organizations/${id}`);
-    return normalizeOrganization({ ...response.data.organization, myRole: response.data.myRole, myRoleLabel: response.data.myRoleLabel });
+    return normalizeOrganization({ ...response.data.organization, myRole: response.data.myRole, myRoleLabel: response.data.myRoleLabel, isOwner: response.data.isOwner });
   },
 
   createOrganization: async (input: CreateOrganizationInput): Promise<OrganizationDetail> => {
