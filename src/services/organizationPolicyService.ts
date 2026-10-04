@@ -11,19 +11,25 @@ export const OrganizationPermission = {
   MANAGE_ROLES: 'MANAGE_ROLES',
 } as const;
 
-type OrganizationAccess = { role?: { name?: string | null; permissions?: unknown } | null };
+type OrganizationAccess = { role?: { name?: string | null; permissions?: unknown } | null; isCreator?: boolean };
 
+// Ownership is independent of the member role: the chama creator keeps all
+// owner privileges even when holding an officer role (Chairperson, Treasurer,
+// Secretary, etc.). getOrganizationAccess stamps `isCreator` on every access
+// object so all permission helpers honour it.
+export const isCreatorOf = (membership?: OrganizationAccess | null) => Boolean(membership?.isCreator);
 export const isOwnerLike = (roleName?: string | null) => ['OWNER', 'FOUNDER', 'ADMIN'].includes((roleName ?? '').toUpperCase());
+export const isOwnerLikeAccess = (membership: OrganizationAccess) => isOwnerLike(membership.role?.name) || isCreatorOf(membership);
 export const hasOrganizationPermission = (membership: OrganizationAccess, permissionKey: string) => {
-  if (isOwnerLike(membership.role?.name)) return true;
+  if (isOwnerLikeAccess(membership)) return true;
   return Array.isArray(membership.role?.permissions) && membership.role.permissions.includes(permissionKey);
 };
-export const isFinanceManager = (membership: OrganizationAccess) => isOwnerLike(membership.role?.name) || ['TREASURER', 'CHAIR'].includes((membership.role?.name ?? '').toUpperCase());
+export const isFinanceManager = (membership: OrganizationAccess) => isOwnerLikeAccess(membership) || ['TREASURER', 'CHAIR'].includes((membership.role?.name ?? '').toUpperCase());
 export const canViewAllFinancials = (membership: OrganizationAccess) => isFinanceManager(membership) || membership.role?.name === 'AUDITOR' || hasOrganizationPermission(membership, 'VIEW_FINANCIALS');
-export const isWelfareApprover = (membership: OrganizationAccess) => isOwnerLike(membership.role?.name) || membership.role?.name === 'CHAIR';
-export const isMeetingManager = (membership: OrganizationAccess) => isOwnerLike(membership.role?.name) || membership.role?.name === 'SECRETARY';
-export const isVoteManager = (membership: OrganizationAccess) => isOwnerLike(membership.role?.name) || membership.role?.name === 'CHAIR';
-export const canManageOrganizationLifecycle = (membership: OrganizationAccess) => isOwnerLike(membership.role?.name) || hasOrganizationPermission(membership, 'EDIT_ORGANIZATION') || hasOrganizationPermission(membership, 'MANAGE_SETTINGS');
+export const isWelfareApprover = (membership: OrganizationAccess) => isOwnerLikeAccess(membership) || membership.role?.name === 'CHAIR';
+export const isMeetingManager = (membership: OrganizationAccess) => isOwnerLikeAccess(membership) || membership.role?.name === 'SECRETARY';
+export const isVoteManager = (membership: OrganizationAccess) => isOwnerLikeAccess(membership) || membership.role?.name === 'CHAIR';
+export const canManageOrganizationLifecycle = (membership: OrganizationAccess) => isOwnerLikeAccess(membership) || hasOrganizationPermission(membership, 'EDIT_ORGANIZATION') || hasOrganizationPermission(membership, 'MANAGE_SETTINGS');
 
 export const getRequiredGuarantorCount = (rawRules: any): number => {
   const ruleValue = rawRules?.guarantorsRequired;
