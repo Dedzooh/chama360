@@ -102,7 +102,7 @@ export const Members = () => {
     if (!currentOrganization?.id || !handoverFrom || !handoverToId) return;
     setHandoverBusy(true);
     try {
-      const result = await organizationService.handoverRole(currentOrganization.id, handoverFrom.id, handoverToId);
+      await organizationService.handoverRole(currentOrganization.id, handoverFrom.id, handoverToId);
       setError(null);
       setHandoverFrom(null);
       setHandoverToId('');
@@ -557,15 +557,15 @@ export const Members = () => {
             <div>
               <h3 className="text-lg font-black text-[var(--ds-secondary)]">Officer handover</h3>
               <p className="mt-1 text-sm text-[var(--ds-text-muted)]">
-                {handoverFrom.user?.firstName ?? 'This member'} ({(handoverFrom.role?.name ?? '').replace(/_/g, ' ')}) hands over all operational permissions to the selected member. They remain a member with full history.
+                {handoverFrom.user?.firstName ?? 'This member'} ({(String(handoverFrom.role ?? '')).replace(/_/g, ' ')}) hands over all operational permissions to the selected member. They remain a member with full history.
               </p>
             </div>
             <label className="block">
-              <span className="mb-1.5 block text-sm font-semibold text-[var(--ds-secondary)]">New {(handoverFrom.role?.name ?? '').replace(/_/g, ' ').toLowerCase()}</span>
+              <span className="mb-1.5 block text-sm font-semibold text-[var(--ds-secondary)]">New {(String(handoverFrom.role ?? '')).replace(/_/g, ' ').toLowerCase()}</span>
               <select value={handoverToId} onChange={(event) => setHandoverToId(event.target.value)} className="input w-full">
                 <option value="">Select incoming officer…</option>
                 {activeMembersForHandover.map((member) => (
-                  <option key={member.id} value={member.id}>{member.user?.firstName ?? ''} {member.user?.lastName ?? ''} — {(member.role?.name ?? 'Member').replace(/_/g, ' ')}</option>
+                  <option key={member.id} value={member.id}>{member.user?.firstName ?? ''} {member.user?.lastName ?? ''} — {(String(member.role ?? 'Member')).replace(/_/g, ' ')}</option>
                 ))}
               </select>
             </label>

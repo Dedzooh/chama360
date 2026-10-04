@@ -268,6 +268,10 @@ router.patch(
       throw new NotFoundError('Loan not found');
     }
     if (existing.status !== LoanStatus.PENDING) throw new BadRequestError('Only pending loans can be approved');
+    // Separation of duties: nobody approves their own loan request.
+    if (existing.borrowerId === req.user.id) {
+      throw new ForbiddenError('You cannot approve your own loan application. Another official must review it.');
+    }
 
     const requiredGuarantors = getRequiredGuarantorCount((currentOrganization as any).settings?.loanRules);
     await requireAcceptedLoanGuarantees(loanId, requiredGuarantors);
@@ -466,6 +470,10 @@ router.patch(
       throw new NotFoundError('Loan not found');
     }
     if (existing.status !== LoanStatus.PENDING) throw new BadRequestError('Only pending loans can be rejected');
+    // Separation of duties: nobody rejects their own loan request.
+    if (existing.borrowerId === req.user.id) {
+      throw new ForbiddenError('You cannot reject your own loan application. Another official must review it.');
+    }
 
     const loan = await db.loan.update({
       where: { id: loanId },

@@ -1290,6 +1290,7 @@ enum OrganizationMemberStatus {
   SUSPENDED
   EXITED
   ARCHIVED
+  DECEASED
 }
 
 enum OrganizationCommitteeStatus {
@@ -1603,3 +1604,22 @@ enum MeetingStatus {
 
 
 
+
+// Platform support impersonation: time-boxed, fully-audited sessions during
+// which a platform administrator acts on behalf of a user for support.
+// Every session has a mandatory reason, a hard expiry, and an explicit end.
+model ImpersonationSession {
+  id           String   @id @default(cuid())
+  adminId      String
+  adminEmail   String
+  targetUserId String
+  reason       String
+  startedAt    DateTime @default(now())
+  expiresAt    DateTime
+  endedAt      DateTime?
+  endedReason  String?
+  organizationId String?
+
+  @@index([targetUserId])
+  @@index([adminId])
+}

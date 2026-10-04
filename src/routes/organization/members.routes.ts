@@ -113,6 +113,81 @@ router.get(
   })
 );
 
+router.post(
+  '/:id/members/:memberId/report-death',
+  authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user?.id) {
+      throw new BadRequestError('User not authenticated');
+    }
+
+    const { id, memberId } = req.params as { id: string; memberId: string };
+    const access = await getOrganizationAccess(id, (req.user.id as string));
+    if (!hasOrganizationPermission(access, 'MANAGE_ROLES')) {
+      throw new ForbiddenError('Only officials with member-management rights can report a death');
+    }
+
+    const currentOrganization = await requireOrganizationStatus(id);
+    if (currentOrganization.status === 'ARCHIVED') {
+      throw new ForbiddenError('Archived organizations are read-only');
+    }
+
+    const payload = (req.body ?? {}) as { dateOfDeath?: string; notes?: string };
+    const member = await db.organizationMember.findFirst({
+      where: { id: memberId, organizationId: id, status: 'ACTIVE' },
+      include: { user: { select: { firstName: true, lastName: true } }, role: true },
+    });
+    if (!member) throw new NotFoundError('Active member not found');
+
+    const outcome = await db.$transaction(async (tx) => {
+      // 1. Mark the member deceased (distinct from EXITED - keeps all records).
+      const updatedMember = await tx.organizationMember.update({
+        where: { id: member.id },
+        data: { status: 'DECEASED' },
+      });
+
+      // 2. Auto-open a bereavement welfare claim for the deceased member.
+      const deceasedName = `${member.user?.firstName ?? ''} ${member.user?.lastName ?? ''}`.trim();
+      let claim = null;
+      try {
+        claim = await tx.welfareClaim.create({
+          data: {
+            organizationId: id,
+            requestedById: (req.user.id as string),
+            claimType: 'DEATH',
+            amountRequested: 0,
+            description: `Bereavement claim auto-opened following the death of ${deceasedName}. Reported by an official.`,
+            status: 'PENDING',
+          },
+        });
+      } catch {
+        // Welfare module may be disabled or the DEATH category may not exist;
+        // the member status change still succeeds and officials handle the
+        // claim manually.
+      }
+
+      return { member: updatedMember, claim };
+    });
+
+    await writeOrganizationAudit({
+      organizationId: id,
+      userId: (req.user.id as string),
+      action: 'MEMBER_DECEASED',
+      entityType: 'OrganizationMember',
+      entityId: member.id,
+      oldValues: { status: 'ACTIVE' },
+      newValues: { status: 'DECEASED', dateOfDeath: payload.dateOfDeath ?? null, notes: payload.notes ?? null, bereavementClaimId: outcome.claim?.id ?? null },
+    });
+
+    res.json({
+      member: outcome.member,
+      claim: outcome.claim,
+      message: `${member.user?.firstName ?? 'Member'} marked as deceased. The account is retained for historical records, and a bereavement welfare claim has been opened for officials to review.`,
+    });
+  })
+);
+
 router.patch(
   '/:id/members/:memberId',
   authenticate,

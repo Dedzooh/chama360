@@ -217,6 +217,10 @@ app.use('/api/v1/mpesa', mpesaRouter);
 app.use('/api/v1/subscriptions', subscriptionRouter);
 app.use('/api/v1/platform/subscriptions', platformSubscriptionRouter);
 
+// Platform support impersonation (time-boxed, audited)
+import { registerPlatformImpersonationRoutes } from './routes/platformImpersonation';
+registerPlatformImpersonationRoutes(app, { db: prisma, auditLog: (entry: any) => new (require('./services/auditLogService').AuditLogService)(prisma).createAuditLog(entry as any) });
+
 // API routes will be added here as we build them
 app.get('/', (_req, res) => {
   res.json({
