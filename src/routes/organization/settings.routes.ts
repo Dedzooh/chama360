@@ -233,6 +233,7 @@ router.get(
         slug: membership.organization.slug,
         description: membership.organization.description,
         status: membership.organization.status,
+        logoUrl: membership.organization.logoUrl ?? null,
         role: membership.role?.label ?? 'Member',
         myRole: membership.role?.name ?? 'MEMBER',
         myRoleLabel: membership.role?.label ?? 'Member',

@@ -60,6 +60,7 @@ export interface Organization {
   slug: string;
   description?: string;
   status: ChamaStatus;
+  logoUrl?: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

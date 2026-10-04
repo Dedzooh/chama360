@@ -1,7 +1,7 @@
 import api from '../config/api';
 import type { AttendanceStatus, ContributionStatus, Loan, LoanRepaymentRecord, LoanSummary, MeetingAttendanceRecord, MeetingRecord, MeetingStatus, Organization, MemberRole, MemberStatus, OrganizationType, PaymentMethod, VoteRecord, VoteResults } from '../types';
 
-export interface OrganizationSummary extends Pick<Organization, 'id' | 'name' | 'organizationType' | 'slug' | 'description' | 'status'> {
+export interface OrganizationSummary extends Pick<Organization, 'id' | 'name' | 'organizationType' | 'slug' | 'description' | 'status' | 'logoUrl'> {
   createdAt?: string;
   updatedAt?: string;
   chamaType?: string | null;
