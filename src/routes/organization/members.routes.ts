@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import type { Prisma } from '@prisma/client';
 import { authenticate } from '../../middleware/auth';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { requireSubscriptionFeature } from '../../middleware/subscription';
@@ -121,6 +122,7 @@ router.post(
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
     }
+    const actorId = req.user.id;
 
     const { id, memberId } = req.params as { id: string; memberId: string };
     const access = await getOrganizationAccess(id, (req.user.id as string));
@@ -140,7 +142,7 @@ router.post(
     });
     if (!member) throw new NotFoundError('Active member not found');
 
-    const outcome = await db.$transaction(async (tx) => {
+    const outcome = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       // 1. Mark the member deceased (distinct from EXITED - keeps all records).
       const updatedMember = await tx.organizationMember.update({
         where: { id: member.id },
@@ -154,8 +156,9 @@ router.post(
         claim = await tx.welfareClaim.create({
           data: {
             organizationId: id,
-            requestedById: (req.user.id as string),
-            claimType: 'DEATH',
+            requestedById: actorId,
+            memberId: member.id,
+            type: 'FUNERAL',
             amountRequested: 0,
             description: `Bereavement claim auto-opened following the death of ${deceasedName}. Reported by an official.`,
             status: 'PENDING',

@@ -12,7 +12,7 @@ const impersonationStartSchema = z.object({
 });
 
 export function registerPlatformImpersonationRoutes(router: Router, context: any): void {
-  const { db, auditLog } = context;
+  const { auditLog } = context;
 
   // Start a time-boxed impersonation session. Platform admins only. The
   // session is recorded with reason + expiry; it does NOT auto-act — it only
@@ -22,6 +22,11 @@ export function registerPlatformImpersonationRoutes(router: Router, context: any
     '/platform/impersonation/start',
     requireSystemAdmin,
     asyncHandler(async (req: Request, res: Response) => {
+      if (!req.user?.id || !req.user.email) {
+        throw new BadRequestError('Administrator not authenticated');
+      }
+      const adminId = req.user.id;
+      const adminEmail = req.user.email;
       const payload = impersonationStartSchema.parse(req.body);
       const target = await (context.db).user.findUnique({
         where: { id: payload.targetUserId },
@@ -33,8 +38,8 @@ export function registerPlatformImpersonationRoutes(router: Router, context: any
       const expiresAt = new Date(Date.now() + payload.minutes * 60 * 1000);
       const session = await context.db.impersonationSession.create({
         data: {
-          adminId: req.user.id,
-          adminEmail: req.user.email,
+          adminId,
+          adminEmail,
           targetUserId: target.id,
           reason: payload.reason,
           organizationId: payload.organizationId ?? null,
@@ -46,15 +51,15 @@ export function registerPlatformImpersonationRoutes(router: Router, context: any
         action: 'IMPERSONATION_START',
         entityType: 'ImpersonationSession',
         entityId: session.id,
-        userId: req.user.id,
+        userId: adminId,
         newValues: { targetUserId: target.id, targetEmail: target.email, reason: payload.reason, expiresAt },
-        metadata: { adminEmail: req.user.email },
+        metadata: { adminEmail },
       });
 
       res.json({
         session: { id: session.id, expiresAt },
         target: { id: target.id, email: target.email, name: `${target.firstName ?? ''} ${target.lastName ?? ''}`.trim() },
-        message: `Impersonation authorized until ${expiresAt.toISOString()}. All actions during this session are attributed to ${req.user.email} on behalf of ${target.email}.`,
+        message: `Impersonation authorized until ${expiresAt.toISOString()}. All actions during this session are attributed to ${adminEmail} on behalf of ${target.email}.`,
       });
     })
   );
@@ -64,6 +69,9 @@ export function registerPlatformImpersonationRoutes(router: Router, context: any
     '/platform/impersonation/:sessionId/end',
     requireSystemAdmin,
     asyncHandler(async (req: Request, res: Response) => {
+      if (!req.user?.id) {
+        throw new BadRequestError('Administrator not authenticated');
+      }
       const session = await context.db.impersonationSession.findUnique({ where: { id: req.params.sessionId } });
       if (!session) throw new NotFoundError('Impersonation session not found');
       if (session.adminId !== req.user.id) throw new ForbiddenError('Only the originating admin can end this session');
