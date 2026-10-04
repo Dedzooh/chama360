@@ -24,7 +24,10 @@ export const WorkspaceAccess = ({ children, roles, module, label }: WorkspaceAcc
   }
 
   const role = (currentOrganization?.myRole ?? 'MEMBER').toUpperCase();
-  const roleAllowed = !roles?.length || roles.includes(role);
+  // The Chama creator keeps access to every page regardless of which officer
+  // role they hold (server enforces the same rule via isOwnerLikeAccess).
+  const isCreator = Boolean((currentOrganization as any)?.isOwner);
+  const roleAllowed = isCreator || !roles?.length || roles.includes(role);
   const moduleEnabled = !module || currentOrganization?.enabledModules?.[module] !== false;
 
   if (roleAllowed && moduleEnabled) return <>{children}</>;
