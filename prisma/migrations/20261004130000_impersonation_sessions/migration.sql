@@ -1,4 +1,4 @@
-﻿-- Platform support impersonation sessions (time-boxed, audited).
+-- Platform support impersonation sessions (time-boxed, audited).
 CREATE TABLE "ImpersonationSession" (
     "id" TEXT NOT NULL,
     "adminId" TEXT NOT NULL,
