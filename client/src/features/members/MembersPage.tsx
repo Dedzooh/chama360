@@ -90,6 +90,30 @@ export const Members = () => {
     }
   };
 
+  // Officer handover state: outgoing member being replaced + chosen incoming.
+  const [handoverFrom, setHandoverFrom] = useState<OrganizationMemberRecord | null>(null);
+  const [handoverToId, setHandoverToId] = useState('');
+  const [handoverBusy, setHandoverBusy] = useState(false);
+  const officerRoles = ['TREASURER', 'SECRETARY', 'CHAIR', 'VICE_CHAIR', 'LOAN_OFFICER', 'WELFARE_OFFICER', 'AUDITOR', 'ADMIN'];
+  const isOfficer = (member: OrganizationMemberRecord) => officerRoles.includes(String(member.role ?? '').toUpperCase());
+  const activeMembersForHandover = members.filter((member) => member.status === 'ACTIVE' && member.id !== handoverFrom?.id);
+
+  const submitHandover = async () => {
+    if (!currentOrganization?.id || !handoverFrom || !handoverToId) return;
+    setHandoverBusy(true);
+    try {
+      const result = await organizationService.handoverRole(currentOrganization.id, handoverFrom.id, handoverToId);
+      setError(null);
+      setHandoverFrom(null);
+      setHandoverToId('');
+      await loadData();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Handover failed');
+    } finally {
+      setHandoverBusy(false);
+    }
+  };
+
   const updateMember = async (member: OrganizationMemberRecord, nextRoleId: string, nextStatus: OrganizationMemberRecord['status']) => {
     if (!currentOrganization?.id) return;
     setSaving(true);
@@ -276,6 +300,11 @@ export const Members = () => {
                         <div />
                       )}
                     </div>
+                    {canManageMembers && isOfficer(member) && member.status === 'ACTIVE' ? (
+                      <Button variant="ghost" disabled={saving} onClick={() => { setHandoverFrom(member); setHandoverToId(''); }} className="w-full">
+                        Hand over role
+                      </Button>
+                    ) : null}
                   </div> : null}
                 </div>
               </Card>
@@ -522,6 +551,32 @@ export const Members = () => {
         onClose={() => setMemberToRemove(null)}
         onConfirm={() => { if (memberToRemove) void removeMember(memberToRemove); }}
       />
+      {handoverFrom ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Officer handover">
+          <div className="w-full max-w-md space-y-4 rounded-[var(--ds-radius-xl)] border border-[var(--ds-border)] bg-[var(--ds-surface)] p-6 shadow-xl">
+            <div>
+              <h3 className="text-lg font-black text-[var(--ds-secondary)]">Officer handover</h3>
+              <p className="mt-1 text-sm text-[var(--ds-text-muted)]">
+                {handoverFrom.user?.firstName ?? 'This member'} ({(handoverFrom.role?.name ?? '').replace(/_/g, ' ')}) hands over all operational permissions to the selected member. They remain a member with full history.
+              </p>
+            </div>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-semibold text-[var(--ds-secondary)]">New {(handoverFrom.role?.name ?? '').replace(/_/g, ' ').toLowerCase()}</span>
+              <select value={handoverToId} onChange={(event) => setHandoverToId(event.target.value)} className="input w-full">
+                <option value="">Select incoming officer…</option>
+                {activeMembersForHandover.map((member) => (
+                  <option key={member.id} value={member.id}>{member.user?.firstName ?? ''} {member.user?.lastName ?? ''} — {(member.role?.name ?? 'Member').replace(/_/g, ' ')}</option>
+                ))}
+              </select>
+            </label>
+            <p className="text-xs text-[var(--ds-text-muted)]">The handover is recorded in the audit trail: previous officer, incoming officer, approved by you, and the date.</p>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setHandoverFrom(null)}>Cancel</Button>
+              <Button disabled={!handoverToId || handoverBusy} busy={handoverBusy} onClick={() => void submitHandover()}>Complete handover</Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

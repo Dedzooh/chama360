@@ -27,6 +27,7 @@ export interface OrganizationDetail extends OrganizationSummary {
   members?: OrganizationMemberRecord[];
   myRole?: string;
   myRoleLabel?: string;
+  isOwner?: boolean;
 }
 
 export interface OrganizationMemberRecord {
@@ -285,7 +286,7 @@ export const organizationService = {
 
   getOrganization: async (id: string): Promise<OrganizationDetail> => {
     const response = await api.get(`/organizations/${id}`);
-    return normalizeOrganization({ ...response.data.organization, myRole: response.data.myRole, myRoleLabel: response.data.myRoleLabel });
+    return normalizeOrganization({ ...response.data.organization, myRole: response.data.myRole, myRoleLabel: response.data.myRoleLabel, isOwner: response.data.isOwner });
   },
 
   createOrganization: async (input: CreateOrganizationInput): Promise<OrganizationDetail> => {
@@ -346,6 +347,13 @@ export const organizationService = {
   updateMember: async (organizationId: string, memberId: string, payload: UpdateMemberInput) => {
     const response = await api.patch(`/organizations/${organizationId}/members/${memberId}`, payload);
     return response.data.member;
+  },
+
+  // Officer handover: the outgoing official's role moves to the incoming
+  // member in one atomic server-side action; outgoing becomes a plain member.
+  handoverRole: async (organizationId: string, memberId: string, newMemberId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/organizations/${organizationId}/members/${memberId}/handover`, { newMemberId, confirm: true });
+    return { message: response.data.message };
   },
 
   removeMember: async (organizationId: string, memberId: string) => {

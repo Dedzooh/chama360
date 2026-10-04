@@ -176,6 +176,78 @@ router.patch(
   })
 );
 
+router.post(
+  '/:id/members/:memberId/handover',
+  authenticate,
+  requireSubscriptionFeature('ADMIN_CONTROLS'),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user?.id) {
+      throw new BadRequestError('User not authenticated');
+    }
+
+    const { id, memberId } = req.params as { id: string; memberId: string };
+    const access = await getOrganizationAccess(id, (req.user.id as string));
+    // Only owner-like users (incl. creator via isCreator flag) or MANAGE_ROLES
+    // holders may officiate a handover.
+    if (!hasOrganizationPermission(access, 'MANAGE_ROLES')) {
+      throw new ForbiddenError('Insufficient permissions to conduct an officer handover');
+    }
+
+    const currentOrganization = await requireOrganizationStatus(id);
+    if (currentOrganization.status === 'ARCHIVED') {
+      throw new ForbiddenError('Archived organizations are read-only');
+    }
+
+    const { newMemberId, confirm } = (req.body ?? {}) as { newMemberId?: string; confirm?: boolean };
+    if (!newMemberId || !confirm) {
+      throw new BadRequestError('Select the incoming officer and confirm the handover');
+    }
+
+    const outgoing = await db.organizationMember.findFirst({
+      where: { id: memberId, organizationId: id, status: 'ACTIVE' },
+      include: { role: true, user: { select: { firstName: true, lastName: true } } },
+    });
+    if (!outgoing) throw new NotFoundError('Outgoing member not found');
+    if (outgoing.id === newMemberId) throw new BadRequestError('The incoming officer must be a different member');
+
+    const incoming = await db.organizationMember.findFirst({
+      where: { id: newMemberId, organizationId: id, status: 'ACTIVE' },
+      include: { role: true, user: { select: { firstName: true, lastName: true } } },
+    });
+    if (!incoming) throw new NotFoundError('Incoming member not found or not active');
+
+    // Founder/owner positions cannot be vacated this way — ownership transfer
+    // has its own flow (the PATCH route guards against losing the last founder).
+    if (['OWNER', 'FOUNDER'].includes((outgoing.role?.name ?? '').toUpperCase())) {
+      throw new BadRequestError('Ownership transfer uses the role change flow, not handover');
+    }
+
+    const outgoingRoleName = outgoing.role?.name ?? 'MEMBER';
+    // Atomic swap in one transaction: outgoing becomes a plain member, incoming
+    // inherits the outgoing officer role.
+    const [updatedOutgoing, updatedIncoming] = await db.$transaction([
+      db.organizationMember.update({ where: { id: outgoing.id }, data: { roleId: (await db.organizationRole.findFirst({ where: { organizationId: id, name: 'MEMBER' } }))?.id ?? outgoing.roleId } }),
+      db.organizationMember.update({ where: { id: incoming.id }, data: { roleId: outgoing.roleId } }),
+    ]);
+
+    await writeOrganizationAudit({
+      organizationId: id,
+      userId: (req.user.id as string),
+      action: 'OFFICER_HANDOVER',
+      entityType: 'OrganizationMember',
+      entityId: outgoing.id,
+      oldValues: { memberId: outgoing.id, name: `${outgoing.user?.firstName ?? ''} ${outgoing.user?.lastName ?? ''}`.trim(), role: outgoingRoleName },
+      newValues: { from: outgoing.id, to: incoming.id, incomingName: `${incoming.user?.firstName ?? ''} ${incoming.user?.lastName ?? ''}`.trim(), role: outgoingRoleName, approvedBy: req.user.id },
+    });
+
+    res.json({
+      outgoing: updatedOutgoing,
+      incoming: updatedIncoming,
+      message: `${outgoingRoleName} handover completed. ${incoming.user?.firstName ?? 'Incoming officer'} now holds ${outgoingRoleName} permissions.`,
+    });
+  })
+);
+
 router.delete(
   '/:id/members/:memberId',
   authenticate,
