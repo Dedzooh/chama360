@@ -572,7 +572,7 @@ export const Members = () => {
             <p className="text-xs text-[var(--ds-text-muted)]">The handover is recorded in the audit trail: previous officer, incoming officer, approved by you, and the date.</p>
             <div className="flex justify-end gap-3">
               <Button variant="outline" onClick={() => setHandoverFrom(null)}>Cancel</Button>
-              <Button disabled={!handoverToId || handoverBusy} busy={handoverBusy} onClick={() => void submitHandover()}>Complete handover</Button>
+              <Button disabled={!handoverToId || handoverBusy} loading={handoverBusy} onClick={() => void submitHandover()}>Complete handover</Button>
             </div>
           </div>
         </div>

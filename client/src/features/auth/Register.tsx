@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { UserPlus } from 'lucide-react';
+import { Eye, EyeOff, UserPlus } from 'lucide-react';
 import { AuthFrame } from '../../components/auth/AuthFrame';
 import { ROUTES } from '../../config/routes';
 import { authService } from '../../services/authService';
@@ -28,6 +28,8 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [acceptedLegal, setAcceptedLegal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const updateField = (field: keyof typeof form, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -112,8 +114,42 @@ const Register = () => {
         <TextField label="Phone" placeholder="+254712345678" autoComplete="tel" inputMode="tel" value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
         <TextField label="National ID" placeholder="12345678" inputMode="numeric" value={form.nationalId} onChange={(event) => updateField('nationalId', event.target.value)} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Password" placeholder="Password" type="password" autoComplete="new-password" value={form.password} onChange={(event) => updateField('password', event.target.value)} />
-          <TextField label="Confirm" placeholder="Repeat password" type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(event) => updateField('confirmPassword', event.target.value)} />
+          <div className="relative">
+            <TextField
+              label="Password"
+              placeholder="Password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={form.password}
+              onChange={(event) => updateField('password', event.target.value)}
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-9 rounded-xl p-2 text-[var(--ds-text-muted)] transition hover:bg-[var(--ds-surface-2)] hover:text-[var(--ds-secondary)]"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <div className="relative">
+            <TextField
+              label="Confirm"
+              placeholder="Repeat password"
+              type={showConfirmPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={form.confirmPassword}
+              onChange={(event) => updateField('confirmPassword', event.target.value)}
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-9 rounded-xl p-2 text-[var(--ds-text-muted)] transition hover:bg-[var(--ds-surface-2)] hover:text-[var(--ds-secondary)]"
+              onClick={() => setShowConfirmPassword((value) => !value)}
+              aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+            >
+              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         <label className="flex items-start gap-3 rounded-2xl border border-[var(--ds-border)] bg-[var(--ds-surface-2)] p-4 text-sm text-[var(--ds-text-muted)]">

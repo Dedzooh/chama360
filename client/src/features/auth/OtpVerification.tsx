@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BadgeCheck, KeyRound, ShieldCheck } from 'lucide-react';
+import { BadgeCheck, Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react';
 import { AuthFrame } from '../../components/auth/AuthFrame';
 import { ROUTES } from '../../config/routes';
 import { authService } from '../../services/authService';
@@ -54,6 +54,8 @@ const OtpVerification = () => {
   const [code, setCode] = useState(state?.verificationCode ?? state?.resetToken ?? '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState(state?.message ?? '');
@@ -168,11 +170,21 @@ const OtpVerification = () => {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">New password</span>
-              <input className="h-11 w-full rounded-[var(--ds-radius-md)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] px-4 text-sm outline-none focus:border-[var(--ds-primary)] focus:ring-4 focus:ring-[var(--ds-ring)]" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+              <div className="relative">
+                <input className="h-11 w-full rounded-[var(--ds-radius-md)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] px-4 pr-11 text-sm outline-none focus:border-[var(--ds-primary)] focus:ring-4 focus:ring-[var(--ds-ring)]" type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-[var(--ds-text-muted)] transition hover:text-[var(--ds-secondary)]" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </label>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold text-[var(--ds-secondary)]">Confirm</span>
-              <input className="h-11 w-full rounded-[var(--ds-radius-md)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] px-4 text-sm outline-none focus:border-[var(--ds-primary)] focus:ring-4 focus:ring-[var(--ds-ring)]" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              <div className="relative">
+                <input className="h-11 w-full rounded-[var(--ds-radius-md)] border border-[var(--ds-border)] bg-[var(--ds-surface-3)] px-4 pr-11 text-sm outline-none focus:border-[var(--ds-primary)] focus:ring-4 focus:ring-[var(--ds-ring)]" type={showConfirmPassword ? 'text' : 'password'} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+                <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-[var(--ds-text-muted)] transition hover:text-[var(--ds-secondary)]" onClick={() => setShowConfirmPassword((value) => !value)} aria-label={showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}>
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </label>
           </div>
         ) : null}
