@@ -4,8 +4,9 @@ import { authenticate, rateLimitSensitive } from '../../middleware/auth';
 import { requireSubscriptionFeature } from '../../middleware/subscription';
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { subscriptionPlans } from '../../config/subscriptions';
+import { paymentSettingsUpdateSchema } from '../../schemas/organization';
 export function registerSettingsRoutes(router: Router, context: any): void {
-  const { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, hasOrganizationPermission, updateOrganizationLifecycle, writeOrganizationAudit, auditLog } = context;
+  const { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, updateOrganizationLifecycle, writeOrganizationAudit, auditLog } = context;
 router.get('/invites/:token', asyncHandler(async (req: Request, res: Response) => {
   const token = inviteTokenSchema.parse(req.params.token);
   const organization = await db.organization.findUnique({
@@ -246,7 +247,9 @@ router.get(
 router.get('/:id/invite-link', authenticate, asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
   const access = await getOrganizationAccess(id, req.user!.id as string);
-  if (!isOwnerLike(access.role?.name ?? '') && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
+  // Ownership is independent of the member role: the chama creator keeps
+  // invite rights even when holding an officer role.
+  if (!isOwnerLikeAccess(access) && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
     throw new ForbiddenError('Insufficient permissions to invite members');
   }
   await db.organization.updateMany({ where: { id, inviteToken: null }, data: { inviteToken: randomUUID() } });
@@ -260,7 +263,7 @@ router.get('/:id/invite-link', authenticate, asyncHandler(async (req: Request, r
 router.post('/:id/invite-link/rotate', authenticate, rateLimitSensitive, asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
   const access = await getOrganizationAccess(id, req.user!.id as string);
-  if (!isOwnerLike(access.role?.name ?? '') && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
+  if (!isOwnerLikeAccess(access) && !hasOrganizationPermission(access, 'INVITE_MEMBERS')) {
     throw new ForbiddenError('Insufficient permissions to invite members');
   }
   if (['SUSPENDED', 'CLOSED', 'ARCHIVED'].includes(access.organization.status)) {
@@ -298,9 +301,9 @@ router.get(
     });
 
     const roleName = access.role?.name ?? 'MEMBER';
-    const canViewContacts = isOwnerLike(roleName) || ['TREASURER', 'SECRETARY'].includes(roleName) || hasOrganizationPermission(access, 'VIEW_MEMBER_CONTACTS');
+    const canViewContacts = isOwnerLikeAccess(access) || ['TREASURER', 'SECRETARY'].includes(roleName) || hasOrganizationPermission(access, 'VIEW_MEMBER_CONTACTS');
     const safeOrganization = organizationRecord ? { ...organizationRecord, inviteToken: undefined, members: organizationRecord.members.map((member: any) => ({ ...member, user: canViewContacts || member.userId === req.user!.id ? member.user : { ...member.user, email: null, phone: null } })) } : organizationRecord;
-    res.json({ organization: safeOrganization, myRole: roleName, myRoleLabel: access.role?.label ?? 'Member' });
+    res.json({ organization: safeOrganization, myRole: roleName, myRoleLabel: access.role?.label ?? 'Member', isOwner: isOwnerLikeAccess(access) });
   })
 );
 
@@ -308,7 +311,7 @@ router.patch(
   '/:id',
   authenticate,
   requireSubscriptionFeature('ADMIN_CONTROLS'),
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response): Promise<void> => {
     if (!req.user?.id) {
       throw new BadRequestError('User not authenticated');
     }
@@ -316,14 +319,25 @@ router.patch(
     const { id } = req.params as { id: string };
     const access = await getOrganizationAccess(id, (req.user.id as string));
 
-    if (!hasOrganizationPermission(access, 'EDIT_ORGANIZATION') && !isOwnerLike((access.role as any)?.name || '')) {
+    // Owner/creator always; plus EDIT_ORGANIZATION permission, plus finance
+    // officers (Treasurer/Secretary) who manage payment profiles.
+    const canUpdateOrganization = hasOrganizationPermission(access, 'EDIT_ORGANIZATION') || isOwnerLikeAccess(access) || ['TREASURER', 'SECRETARY'].includes((access.role as any)?.name ?? '');
+    if (!canUpdateOrganization) {
       throw new ForbiddenError('Insufficient permissions to update organization');
     }
 
     const payload = organizationUpdateSchema.parse(req.body);
+    // Validate the treasurer's payment profile when present so enabled
+    // methods and bank details persist with correct, checked values.
+    const incomingMetadata = (payload.metadata ?? {}) as Record<string, unknown>;
+    if (incomingMetadata.paymentSettings) {
+      incomingMetadata.paymentSettings = paymentSettingsUpdateSchema.parse(incomingMetadata.paymentSettings);
+      payload.metadata = incomingMetadata;
+    }
     if (payload.status === 'ACTIVE') {
       const organization = await updateOrganizationLifecycle({ organizationId: id, userId: req.user.id, targetStatus: 'ACTIVE' });
-      res.json({ organization }); return;
+      res.json({ organization });
+      return;
     }
     const before = await db.organization.findUnique({ where: { id } });
     const updated = await db.organization.update({
