@@ -186,7 +186,23 @@ export const paymentSettingsSchema = z.object({
   accountReference: z.string().min(1).max(12).optional(),
   transactionDesc: z.string().min(1).max(13).optional(),
   isEnabled: z.boolean().default(true),
+  // Payment methods members may use for contributions and "I have paid" proofs.
+  acceptedMethods: z.array(z.enum(['MPESA', 'BANK', 'CASH'])).min(1).default(['MPESA', 'BANK', 'CASH']),
+  // Bank transfer details (shown to members when BANK is accepted).
+  bankName: z.string().min(2).max(80).optional(),
+  bankAccountName: z.string().min(2).max(80).optional(),
+  bankAccountNumber: z.string().min(3).max(30).optional(),
+  // Free-form instructions displayed on the member contribution/proof screens.
+  paymentInstructions: z.string().max(1000).optional(),
 }).superRefine((data, ctx) => {
+  if (data.isEnabled && data.acceptedMethods.includes('BANK') && (!data.bankName || !data.bankAccountNumber)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['bankAccountNumber'],
+      message: 'Bank name and account number are required when bank transfer is enabled',
+    });
+  }
+
   if (data.mode === 'MPESA_NUMBER' && !data.mpesaNumber) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
