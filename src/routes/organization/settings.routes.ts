@@ -323,7 +323,7 @@ router.patch(
     const payload = organizationUpdateSchema.parse(req.body);
     if (payload.status === 'ACTIVE') {
       const organization = await updateOrganizationLifecycle({ organizationId: id, userId: req.user.id, targetStatus: 'ACTIVE' });
-      return res.json({ organization });
+      res.json({ organization }); return;
     }
     const before = await db.organization.findUnique({ where: { id } });
     const updated = await db.organization.update({

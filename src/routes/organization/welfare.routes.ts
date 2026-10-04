@@ -109,7 +109,7 @@ router.patch(
       if (!current || current.organizationId !== id) throw new NotFoundError('Welfare claim not found');
       if (current.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be approved');
       if (current.requestedById === req.user!.id) throw new ForbiddenError('A member cannot approve their own welfare claim');
-      if (current.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
+      if (current.approvals.some((approval: { approverId: string }) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
 
       await tx.welfareClaimApproval.create({
         data: {
@@ -316,14 +316,14 @@ router.patch(
     }
     if (existing.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be rejected');
     if (existing.requestedById === req.user.id) throw new ForbiddenError('A member cannot reject their own welfare claim');
-    if (existing.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
+    if (existing.approvals.some((approval: { approverId: string }) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
 
     const claim = await runFinancialTransaction(async (tx: Prisma.TransactionClient) => {
       const current = await tx.welfareClaim.findUnique({ where: { id: claimId }, include: { approvals: true } });
       if (!current || current.organizationId !== id) throw new NotFoundError('Welfare claim not found');
       if (current.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be rejected');
       if (current.requestedById === req.user!.id) throw new ForbiddenError('A member cannot reject their own welfare claim');
-      if (current.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
+      if (current.approvals.some((approval: { approverId: string }) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
       await tx.welfareClaimApproval.create({ data: { claimId, approverId: req.user!.id, decision: 'REJECTED', comment } });
       const history = Array.isArray(current.statusHistory) ? current.statusHistory as any[] : [];
       return tx.welfareClaim.update({
