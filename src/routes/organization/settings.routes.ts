@@ -143,9 +143,13 @@ router.post(
         data: { organizationId: created.id, balance: 0, consumed: 0 },
       });
 
-      const trialEndsAt = new Date(Date.now() + subscriptionPlans.GROWTH.trialDays * 86400000);
+      // 30-day trial: full Enterprise experience — every feature, no member
+      // limit — so new chamas taste the complete product with zero limits.
+      // At expiry the lifecycle service downgrades to the free Community plan
+      // (data preserved, historical imports remain available on every tier).
+      const trialEndsAt = new Date(Date.now() + subscriptionPlans.ENTERPRISE.trialDays * 86400000);
       await tx.organizationSubscription.create({
-        data: { organizationId: created.id, plan: 'GROWTH', billingCycle: 'MONTHLY', status: 'ACTIVE', trialEndsAt, currentPeriodStart: new Date(), currentPeriodEnd: trialEndsAt, provider: 'CHAMA360_TRIAL' },
+        data: { organizationId: created.id, plan: 'ENTERPRISE', billingCycle: 'MONTHLY', status: 'ACTIVE', trialEndsAt, currentPeriodStart: new Date(), currentPeriodEnd: trialEndsAt, provider: 'CHAMA360_TRIAL' },
       });
 
       if (referral) {
