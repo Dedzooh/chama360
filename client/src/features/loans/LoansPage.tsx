@@ -4,7 +4,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useOrganizationWorkspace } from '../../context/OrganizationWorkspaceContext';
 import { organizationService } from '../../services/organizationService';
 import type { Loan, LoanSummary } from '../../types';
-import { Badge, Button, Card, EmptyState, SelectField, TextField } from '../../design-system';
+import { Button, Card, EmptyState, SelectField, TextField } from '../../design-system';
 import { ROUTES } from '../../config/routes';
 import { useAuthStore } from '../../store/authStore';
 

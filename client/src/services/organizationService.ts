@@ -192,6 +192,7 @@ export interface WelfareClaimRecord {
 export interface DisputeRecord {
   id: string;
   category: string;
+  raisedBy?: { firstName?: string; lastName?: string } | null;
   relatedEntityType?: 'LOAN' | 'WELFARE_CLAIM' | null;
   relatedEntityId?: string | null;
   description: string;

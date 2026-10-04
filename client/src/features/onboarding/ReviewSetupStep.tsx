@@ -56,7 +56,7 @@ export const ReviewSetupStep = () => {
     try {
       const organizationInput = {
         name,
-        organizationType: 'CHAMA',
+        organizationType: 'CHAMA' as const,
         chamaType: draft.chamaType,
         enabledModules: draft.enabledModules,
         description: draft.description.trim() || undefined,
