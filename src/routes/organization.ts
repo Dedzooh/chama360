@@ -5,7 +5,7 @@ import { runFinancialTransaction } from '../services/financialTransactionService
 import { updateOrganizationLifecycle as transitionOrganizationLifecycle } from '../services/organizationLifecycleService';
 import { enforceWelfareEligibility as validateWelfareEligibility } from '../services/welfareEligibilityService';
 import { writeOrganizationAudit as persistOrganizationAudit } from '../services/organizationAuditService';
-import { OrganizationPermission, isOwnerLike, hasOrganizationPermission, isFinanceManager, canViewAllFinancials, isWelfareApprover, isMeetingManager, isVoteManager, canManageOrganizationLifecycle, getRequiredGuarantorCount, getRuleNumber, resolveWelfareApprovalPolicy } from '../services/organizationPolicyService';
+import { OrganizationPermission, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, isFinanceManager, canViewAllFinancials, isWelfareApprover, isMeetingManager, isVoteManager, canManageOrganizationLifecycle, getRequiredGuarantorCount, getRuleNumber, resolveWelfareApprovalPolicy } from '../services/organizationPolicyService';
 import { organizationCreateSchema, organizationUpdateSchema, memberCreateSchema, memberUpdateSchema } from '../schemas/organization';
 import { contributionCreateSchema, markContributionPaidSchema, reverseContributionSchema, submitContributionPaymentSchema, reviewContributionPaymentSchema, loanApplySchema, loanDecisionSchema, disputeCreateSchema, disputeStatusSchema, guaranteeDecisionSchema, loanRepaySchema, investmentAssetSchema, welfareCreateSchema, welfareTransitionSchema, meetingCreateSchema, meetingUpdateSchema, attendanceSchema, voteCreateSchema, voteResponseSchema } from '../schemas/organizationWorkflows';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../middleware/errorHandler';
@@ -38,7 +38,10 @@ async function getOrganizationAccess(organizationId: string, userId: string) {
   if (!membership || membership.status !== 'ACTIVE') {
     throw new ForbiddenError('Active membership required for this organization');
   }
-  return membership;
+  // Ownership is independent of role: the chama creator keeps every owner
+  // privilege even when holding an officer role (Chairperson, Treasurer,
+  // Secretary, etc.). All permission helpers receive this flag.
+  return Object.assign(membership, { isCreator: membership.organization?.createdById === userId });
 }
 
 async function requireAcceptedLoanGuarantees(loanId: string, requiredGuarantors = 1) {
@@ -60,6 +63,26 @@ async function requireOrganizationStatus(organizationId: string) {
   return { ...organization, metadata: (organization.metadata && typeof organization.metadata === 'object' ? organization.metadata : {}) as Record<string, unknown> };
 }
 
+// Module scoping: optional modules (welfare, loans, investments, voting) are
+// only available to chamas that enabled them at creation/in settings. This is
+// the backend guarantee behind the hidden nav items — a savings-only chama
+// cannot hit the welfare API directly.
+async function requireModuleEnabled(organizationId: string, module: string) {
+  const organization = await db.organization.findUnique({
+    where: { id: organizationId },
+    select: { enabledModules: true, organizationType: true },
+  });
+  if (!organization) throw new NotFoundError('Organization not found');
+  const modules = (organization.enabledModules && typeof organization.enabledModules === 'object' ? organization.enabledModules : {}) as Record<string, unknown>;
+  // Default behaviour: modules not present in the record are considered
+  // DISABLED only if they were never part of this org's type defaults — but a
+  // missing key on an existing record is treated as disabled for optional
+  // modules, matching the frontend `!== false`... we choose the stricter
+  // explicit-off contract here: an unknown/absent key blocks the module.
+  if (modules[module] === true) return;
+  throw new ForbiddenError(`${module.charAt(0).toUpperCase()}${module.slice(1)} is not enabled for this group. Enable it in Settings before using this feature.`);
+}
+
 import { registerSettingsRoutes } from './organization/settings.routes';
 import { registerMembersRoutes } from './organization/members.routes';
 import { registerContributionsRoutes } from './organization/contributions.routes';
@@ -72,11 +95,11 @@ import { registerDisputesRoutes } from './organization/disputes.routes';
 const writeOrganizationAudit = (params: Parameters<typeof persistOrganizationAudit>[1]) => persistOrganizationAudit(db, params);
 const enforceWelfareEligibility = (organizationId: string, memberId: string, claimType: string, amountRequested: number, documents: string[]) => validateWelfareEligibility(organizationId, memberId, claimType, amountRequested, documents, { requireOrganizationStatus, findMember: (organizationId, userId) => db.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } } }) });
 
-registerSettingsRoutes(router, { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, hasOrganizationPermission, updateOrganizationLifecycle: (params: Parameters<typeof transitionOrganizationLifecycle>[0]) => transitionOrganizationLifecycle(params, { requireOrganizationStatus, getOrganizationAccess, canManageOrganizationLifecycle, updateOrganization: async (organizationId, status) => db.organization.update({ where: { id: organizationId }, data: { status: status as any } }), writeAudit: writeOrganizationAudit }), writeOrganizationAudit, auditLog });
+registerSettingsRoutes(router, { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, updateOrganizationLifecycle: (params: Parameters<typeof transitionOrganizationLifecycle>[0]) => transitionOrganizationLifecycle(params, { requireOrganizationStatus, getOrganizationAccess, canManageOrganizationLifecycle, updateOrganization: async (organizationId, status) => db.organization.update({ where: { id: organizationId }, data: { status: status as any } }), writeAudit: writeOrganizationAudit }), writeOrganizationAudit, auditLog });
 registerMembersRoutes(router, { db, memberCreateSchema, memberUpdateSchema, getOrganizationAccess, hasOrganizationPermission, isOwnerLike, isFounderRole, requireOrganizationStatus, requireMemberCapacity, writeOrganizationAudit });
 registerContributionsRoutes(router, { db, contributionCreateSchema, markContributionPaidSchema, reverseContributionSchema, submitContributionPaymentSchema, reviewContributionPaymentSchema, getOrganizationAccess, canViewAllFinancials, isFinanceManager, requireOrganizationStatus, runFinancialTransaction, writeOrganizationAudit });
-registerLoansRoutes(router, { db, loanApplySchema, loanDecisionSchema, guaranteeDecisionSchema, loanRepaySchema, OrganizationPermission, getOrganizationAccess, hasOrganizationPermission, isFinanceManager, isWelfareApprover, requireOrganizationStatus, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit });
-registerWelfareRoutes(router, { db, welfareCreateSchema, welfareTransitionSchema, getOrganizationAccess, isFinanceManager, isWelfareApprover, requireOrganizationStatus, enforceWelfareEligibility, resolveWelfareApprovalPolicy, runFinancialTransaction, writeOrganizationAudit });
+registerLoansRoutes(router, { db, loanApplySchema, loanDecisionSchema, guaranteeDecisionSchema, loanRepaySchema, OrganizationPermission, getOrganizationAccess, hasOrganizationPermission, isFinanceManager, isWelfareApprover, requireOrganizationStatus, requireModuleEnabled, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit });
+registerWelfareRoutes(router, { db, welfareCreateSchema, welfareTransitionSchema, getOrganizationAccess, isFinanceManager, isWelfareApprover, requireOrganizationStatus, requireModuleEnabled, enforceWelfareEligibility, resolveWelfareApprovalPolicy, runFinancialTransaction, writeOrganizationAudit });
 registerMeetingsRoutes(router, { db, meetingCreateSchema, meetingUpdateSchema, attendanceSchema, getOrganizationAccess, hasOrganizationPermission, isMeetingManager, requireOrganizationStatus, writeOrganizationAudit });
 registerVotingRoutes(router, { db, voteCreateSchema, voteResponseSchema, getOrganizationAccess, hasOrganizationPermission, isMeetingManager, isVoteManager, requireOrganizationStatus, writeOrganizationAudit });
 registerDisputesRoutes(router, { db, disputeCreateSchema, disputeStatusSchema, getOrganizationAccess, isFinanceManager, isWelfareApprover, writeOrganizationAudit });

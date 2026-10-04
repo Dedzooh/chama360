@@ -259,7 +259,7 @@ export const Dashboard = () => {
     { label: 'Add officials', complete: memberCount > 1, to: ROUTES.chama.members(organization.id) },
     { label: 'Invite members', complete: memberCount > 1, to: ROUTES.chama.members(organization.id) },
     { label: 'Set contribution amount', complete: Boolean(organizationMetadata.contributionRules), to: ROUTES.chama.contributions(organization.id) },
-    { label: 'Configure welfare benefits and claims', complete: Boolean(organizationMetadata.welfareRules?.categories?.some((category) => category.enabled)), to: ROUTES.chama.settings(organization.id) },
+    ...(enabledModules.welfare ? [{ label: 'Configure welfare benefits and claims', complete: Boolean(organizationMetadata.welfareRules?.categories?.some((category) => category.enabled)), to: ROUTES.chama.settings(organization.id) }] : []),
     { label: 'Configure M-Pesa', complete: Boolean(organizationMetadata.paymentSettings?.isEnabled), to: ROUTES.chama.settings(organization.id) },
   ] : [];
   const setupComplete = setupSteps.filter((step) => step.complete).length;
@@ -316,7 +316,7 @@ export const Dashboard = () => {
   const dashboardStats = [
     { label: 'Contributions', value: formatMoney(paidContributionTotal, currency), caption: `${paidContributionCount} received`, icon: ArrowDownCircle, tone: 'green' },
     ...(enabledModules.loans ? [{ label: 'Loan approvals', value: pendingLoanCount.toString(), caption: 'Pending', icon: Wallet, tone: 'blue' as const }] : []),
-    { label: 'Welfare claims', value: pendingClaimCount.toString(), caption: `${totalClaimCount} total`, icon: Heart, tone: 'pink' },
+    ...(enabledModules.welfare ? [{ label: 'Welfare claims', value: pendingClaimCount.toString(), caption: `${totalClaimCount} total`, icon: Heart, tone: 'pink' as const }] : []),
     { label: 'Meetings', value: meetings.length.toString(), caption: nextMeeting ? formatDateLabel(nextMeeting.dateTime) : 'None scheduled', icon: CalendarDays, tone: 'gold' },
   ] as const;
   const recentDashboardActivity = (recentActivity.length
@@ -643,7 +643,7 @@ export const Dashboard = () => {
           <MetricCard title="Modules" value={enabledModuleCount.toString()} caption={readonly ? 'Read only' : 'Operational'} tone="gold" icon={<ClipboardList className="h-5 w-5" />} />
           <MetricCard title="Contributions" value={`${paidContributionCount}/${contributions.length}`} caption={`${pendingContributionCount} pending`} tone="info" icon={<CalendarDays className="h-5 w-5" />} />
           {enabledModules.loans ? <MetricCard title="Loans" value={activeLoanCount.toString()} caption={`${pendingLoanCount} waiting`} tone="warning" icon={<Archive className="h-5 w-5" />} /> : null}
-          <MetricCard title="Welfare" value={`${pendingClaimCount}/${totalClaimCount}`} caption="Claims in motion" tone="error" icon={<Heart className="h-5 w-5" />} />
+          {enabledModules.welfare ? <MetricCard title="Welfare" value={`${pendingClaimCount}/${totalClaimCount}`} caption="Claims in motion" tone="error" icon={<Heart className="h-5 w-5" />} /> : null}
         </section>
       ) : null}
 
@@ -764,7 +764,7 @@ export const Dashboard = () => {
             <div className="mt-5 space-y-3">
               {enabledModules.loans ? <QuickAction label="Open loans" description="Review approvals and balances." icon={<Archive className="h-5 w-5" />} /> : null}
               <QuickAction label="Meetings" description="Plan the next gathering." icon={<CalendarDays className="h-5 w-5" />} />
-              <QuickAction label="Welfare claims" description="Handle support requests." icon={<Heart className="h-5 w-5" />} />
+              {enabledModules.welfare ? <QuickAction label="Welfare claims" description="Handle support requests." icon={<Heart className="h-5 w-5" />} /> : null}
             </div>
           </Card>
 

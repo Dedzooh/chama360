@@ -5,7 +5,7 @@ import { authenticate, rateLimitSensitive, requireMfaIfEnabled } from '../../mid
 import { asyncHandler, BadRequestError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler';
 import { requireSubscriptionFeature } from '../../middleware/subscription';
 export function registerLoansRoutes(router: Router, context: any): void {
-  const { db, loanApplySchema, loanDecisionSchema, guaranteeDecisionSchema, loanRepaySchema, getOrganizationAccess, hasOrganizationPermission, isFinanceManager, isWelfareApprover, requireOrganizationStatus, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit } = context;
+  const { db, loanApplySchema, loanDecisionSchema, guaranteeDecisionSchema, loanRepaySchema, getOrganizationAccess, hasOrganizationPermission, isFinanceManager, isWelfareApprover, requireOrganizationStatus, requireModuleEnabled, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit } = context;
 router.post(
   '/:id/loans/apply',
   authenticate,
@@ -18,6 +18,7 @@ router.post(
     const membership = await getOrganizationAccess(id, req.user.id as string);
 
     const currentOrganization = await requireOrganizationStatus(id);
+    await requireModuleEnabled(id, 'loans');
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
       throw new ForbiddenError('Closed organizations cannot accept new loans');
     }
@@ -256,6 +257,7 @@ router.patch(
     }
 
     const currentOrganization = await requireOrganizationStatus(id);
+    await requireModuleEnabled(id, 'loans');
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
       throw new ForbiddenError('Closed organizations cannot approve loans');
     }
@@ -317,6 +319,7 @@ router.patch(
     await getOrganizationAccess(id, req.user.id as string);
 
     const currentOrganization = await requireOrganizationStatus(id);
+    await requireModuleEnabled(id, 'loans');
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
       throw new ForbiddenError('Closed organizations cannot accept loan guarantees');
     }
@@ -452,6 +455,7 @@ router.patch(
     }
 
     const currentOrganization = await requireOrganizationStatus(id);
+    await requireModuleEnabled(id, 'loans');
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
       throw new ForbiddenError('Closed organizations cannot reject loans');
     }
@@ -513,6 +517,7 @@ router.patch(
     }
 
     const currentOrganization = await requireOrganizationStatus(id);
+    await requireModuleEnabled(id, 'loans');
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
       throw new ForbiddenError('Closed organizations cannot disburse loans');
     }
@@ -562,6 +567,7 @@ router.post(
     }
 
     const currentOrganization = await requireOrganizationStatus(id);
+    await requireModuleEnabled(id, 'loans');
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
       throw new ForbiddenError('Closed organizations cannot record repayments');
     }

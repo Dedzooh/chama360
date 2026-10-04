@@ -6,7 +6,7 @@ import { requireSubscriptionFeature } from '../../middleware/subscription';
 import { LedgerService } from '../../services/ledgerService';
 import { computeApprovalOutcome, validateWelfarePayout } from '../../services/welfareGuardrails';
 export function registerWelfareRoutes(router: Router, context: any): void {
-  const { db, welfareCreateSchema, welfareTransitionSchema, getOrganizationAccess, isFinanceManager, isWelfareApprover, requireOrganizationStatus, enforceWelfareEligibility, resolveWelfareApprovalPolicy, runFinancialTransaction, writeOrganizationAudit } = context;
+  const { db, welfareCreateSchema, welfareTransitionSchema, getOrganizationAccess, isFinanceManager, isWelfareApprover, requireOrganizationStatus, requireModuleEnabled, enforceWelfareEligibility, resolveWelfareApprovalPolicy, runFinancialTransaction, writeOrganizationAudit } = context;
 router.post(
   '/:id/welfare/claims',
   authenticate,
@@ -19,6 +19,7 @@ router.post(
     await getOrganizationAccess(id, (req.user.id as string));
 
     const currentOrganization = await requireOrganizationStatus(id);
+    await requireModuleEnabled(id, 'welfare');
     if (currentOrganization.status === 'CLOSED' || currentOrganization.status === 'ARCHIVED') {
       throw new ForbiddenError('Closed organizations cannot accept new welfare claims');
     }
@@ -109,7 +110,7 @@ router.patch(
       if (!current || current.organizationId !== id) throw new NotFoundError('Welfare claim not found');
       if (current.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be approved');
       if (current.requestedById === req.user!.id) throw new ForbiddenError('A member cannot approve their own welfare claim');
-      if (current.approvals.some((approval: { approverId: string }) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
+      if (current.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
 
       await tx.welfareClaimApproval.create({
         data: {
@@ -323,7 +324,7 @@ router.patch(
       if (!current || current.organizationId !== id) throw new NotFoundError('Welfare claim not found');
       if (current.status !== 'PENDING') throw new BadRequestError('Only pending welfare claims can be rejected');
       if (current.requestedById === req.user!.id) throw new ForbiddenError('A member cannot reject their own welfare claim');
-      if (current.approvals.some((approval: { approverId: string }) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
+      if (current.approvals.some((approval) => approval.approverId === req.user!.id)) throw new BadRequestError('This approver has already recorded a decision for the claim');
       await tx.welfareClaimApproval.create({ data: { claimId, approverId: req.user!.id, decision: 'REJECTED', comment } });
       const history = Array.isArray(current.statusHistory) ? current.statusHistory as any[] : [];
       return tx.welfareClaim.update({
