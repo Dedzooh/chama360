@@ -3,6 +3,7 @@ import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from 'rea
 import { Activity, AlertTriangle, ArrowLeft, Bell, CalendarDays, CheckSquare, Crown, FileText, Flag, HeartHandshake, LineChart, LogOut, Menu, Plus, QrCode, RefreshCw, Settings, ShieldCheck, Upload, UserCircle2, UserPlus, Vote, Wallet } from 'lucide-react';
 import { BottomSheet, Button, IconButton } from '../design-system';
 import { BottomNav } from './BottomNav';
+import { ChamaSwitcher } from './ChamaSwitcher';
 import { BrandLockup, BrandMark } from './BrandLogo';
 import { ROUTES } from '../config/routes';
 import { getChamaStatusLabel, getChamaStatusTone } from '../utils/chamaLifecycle';
@@ -230,6 +231,10 @@ const AppShellContent = ({ selectedOrganizationId }: AppShellContentProps) => {
       </header>
 
       <main className="mx-auto w-full max-w-[760px] px-4 pb-28 pt-4 sm:px-6 mobile-safe-bottom">
+        {/* First-class chama switcher: current chama + role always visible. */}
+        <div className="mb-4">
+          <ChamaSwitcher />
+        </div>
         {error ? <div className="error-banner mb-4 px-4 py-3 text-sm">{error}</div> : null}
 
         <section className="mb-4 hidden md:block">
