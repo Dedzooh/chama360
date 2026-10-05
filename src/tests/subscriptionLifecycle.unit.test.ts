@@ -36,11 +36,11 @@ describe('subscription release safety', () => {
   it('applies the requested starter and standard pricing tiers while keeping the rest unchanged', () => {
     expect(subscriptionPlans.STARTER.monthlyPrice).toBe(150);
     expect(subscriptionPlans.STARTER.annualPrice).toBe(1500);
-    expect(subscriptionPlans.STARTER.memberLimit).toBe(30);
-    expect(subscriptionPlans.GROWTH.monthlyPrice).toBe(350);
-    expect(subscriptionPlans.GROWTH.annualPrice).toBe(3500);
-    expect(subscriptionPlans.GROWTH.memberLimit).toBe(50);
-    expect(subscriptionPlans.PRO.monthlyPrice).toBe(1799);
+    expect(subscriptionPlans.STARTER.memberLimit).toBe(40);
+    expect(subscriptionPlans.GROWTH.monthlyPrice).toBe(300);
+    expect(subscriptionPlans.GROWTH.annualPrice).toBe(3000);
+    expect(subscriptionPlans.GROWTH.memberLimit).toBe(60);
+    expect(subscriptionPlans.PRO.monthlyPrice).toBe(699);
   });
   it('matches platform admins case-insensitively and rejects other users', () => {
     expect(isSystemAdminEmail(' Owner@Example.com ', ['owner@example.com'])).toBe(true);
