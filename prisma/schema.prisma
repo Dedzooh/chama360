@@ -78,6 +78,12 @@ model User {
   referralsMade   Referral[] @relation("ReferralReferrer")
   contributionAllocations ContributionAllocation[]
   contributionCredits ContributionCredit[]
+  paymentsMade    ContributionPayment[] @relation("PaymentPayer")
+  contributionPaymentAllocations ContributionPaymentAllocation[]
+  paymentMethodsCreated OrganizationPaymentMethod[] @relation("PaymentMethodCreatedBy")
+  paymentMethodsUpdated OrganizationPaymentMethod[] @relation("PaymentMethodUpdatedBy")
+  contributionPaymentsRecorded ContributionPayment[] @relation("PaymentRecordedBy")
+  paymentAllocationsConfirmed ContributionPaymentAllocation[] @relation("PaymentAllocationConfirmedBy")
   kycDocuments    KycDocument[]
   organizationDocuments OrganizationDocument[]
   subscriptionCredits SubscriptionCredit[]
@@ -425,7 +431,9 @@ model Organization {
   referral          Referral?
   contributionAllocations ContributionAllocation[]
   contributionCredits ContributionCredit[]
-  smsCreditWallet     OrganizationSmsCredit?
+   smsCreditWallet     OrganizationSmsCredit?
+  paymentMethods  OrganizationPaymentMethod[]
+  payments        ContributionPayment[]
 
   @@index([organizationType])
   @@index([status])
@@ -723,6 +731,7 @@ model Contribution {
   recordedBy     User? @relation("ContributionRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
   reversedBy     User? @relation("ContributionReversedBy", fields: [reversedById], references: [id], onDelete: SetNull)
   allocations    ContributionAllocation[]
+  paymentAllocations ContributionPaymentAllocation[]
 
   @@index([status])
   @@index([dueDate])
@@ -1236,6 +1245,131 @@ model MeetingAttendance {
   @@index([memberId])
   @@index([recordedById])
   @@map("meeting_attendance")
+}
+
+// Chama payment methods (Till / PayBill / Treasurer M-Pesa / Bank). These are
+// the Chama's OWN collection channels — completely separate from the Chama360
+// platform subscription collection number (see config.mpesa.shortcode). Every
+// change is audited via OrganizationAuditLog so member payments cannot be
+// silently redirected.
+enum ChamaPaymentChannelType {
+  MPESA_TILL
+  MPESA_PAYBILL
+  TREASURER_MPESA
+  BANK
+  OTHER
+}
+
+enum ChamaPaymentMethodStatus {
+  ACTIVE
+  PENDING_VERIFICATION
+  DISABLED
+}
+
+model OrganizationPaymentMethod {
+  id             String   @id @default(cuid())
+  organizationId String
+  channelType    ChamaPaymentChannelType
+  label          String
+  tillNumber     String?
+  paybillNumber  String?
+  accountNumber  String?
+  bankName       String?
+  bankAccountName String?
+  bankAccountNumber String?
+  phone          String?  // Treasurer's personal M-Pesa number
+  recipientName  String?  // e.g. "John — Treasurer"
+  instructions   String?
+  status         ChamaPaymentMethodStatus @default(ACTIVE)
+  isDefault      Boolean  @default(false)
+  createdById    String
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User @relation("PaymentMethodCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy    User? @relation("PaymentMethodUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  payments     ContributionPayment[]
+
+  @@index([organizationId, status])
+  @@map("organization_payment_methods")
+}
+
+// Payment = one real-world money movement (e.g. one M-Pesa transaction).
+// payerUserId   = who physically sent the money (may differ from the member
+//                 whose obligation it settles).
+// beneficiary   = whose Chama obligation is being settled (via allocations).
+// One payment can cover several members and/or several periods.
+// Overpayments become ContributionCredit; nothing is silently assumed.
+enum ContributionPaymentStatus {
+  PENDING
+  COMPLETED
+  RECONCILIATION_REQUIRED
+  REJECTED
+  REVERSED
+}
+
+enum PaymentAllocationKind {
+  CONTRIBUTION
+  CREDIT
+  UNALLOCATED
+}
+
+model ContributionPayment {
+  id                String   @id @default(cuid())
+  organizationId    String
+  chamaId           String?
+  payerUserId       String
+  amount            Decimal  @db.Decimal(10, 2)
+  allocatedAmount   Decimal  @default(0) @db.Decimal(10, 2)
+  currency          String   @default("KES")
+  paymentMethodId   String?
+  paymentMethod     PaymentMethod?
+  transactionReference String?
+  status            ContributionPaymentStatus @default(PENDING)
+  confirmation      Json?
+  paidAt            DateTime @default(now())
+  recordedById      String?
+  reversedById      String?
+  reverseReason     String?
+  reversedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payer          User @relation("PaymentPayer", fields: [payerUserId], references: [id], onDelete: Restrict)
+  paymentMethodRef OrganizationPaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  recordedBy     User? @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  allocations    ContributionPaymentAllocation[]
+
+  @@index([organizationId, status])
+  @@index([payerUserId])
+  @@index([transactionReference])
+  @@map("contribution_payments")
+}
+
+model ContributionPaymentAllocation {
+  id          String @id @default(cuid())
+  paymentId   String
+  memberId    String
+  contributionId String?
+  kind        PaymentAllocationKind @default(CONTRIBUTION)
+  period      String?
+  contributionType String?
+  amount      Decimal @db.Decimal(10, 2)
+  confirmedById String?
+  createdAt   DateTime @default(now())
+
+  payment      ContributionPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  member       User @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  contribution Contribution? @relation(fields: [contributionId], references: [id], onDelete: SetNull)
+  confirmedBy  User? @relation("PaymentAllocationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([memberId, period])
+  @@index([contributionId])
+  @@map("contribution_payment_allocations")
 }
 
 model OrganizationAuditLog {

@@ -84,6 +84,8 @@ async function requireModuleEnabled(organizationId: string, module: string) {
 }
 
 import { registerSettingsRoutes } from './organization/settings.routes';
+import { registerPaymentMethodRoutes } from './organization/paymentMethods.routes';
+import { registerPaymentsRoutes } from './organization/payments.routes';
 import { registerMembersRoutes } from './organization/members.routes';
 import { registerContributionsRoutes } from './organization/contributions.routes';
 import { registerLoansRoutes } from './organization/loans.routes';
@@ -96,6 +98,8 @@ const writeOrganizationAudit = (params: Parameters<typeof persistOrganizationAud
 const enforceWelfareEligibility = (organizationId: string, memberId: string, claimType: string, amountRequested: number, documents: string[]) => validateWelfareEligibility(organizationId, memberId, claimType, amountRequested, documents, { requireOrganizationStatus, findMember: (organizationId, userId) => db.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId } } }) });
 
 registerSettingsRoutes(router, { db, inviteTokenSchema, organizationCreateSchema, organizationUpdateSchema, getOrganizationAccess, isOwnerLike, isOwnerLikeAccess, hasOrganizationPermission, updateOrganizationLifecycle: (params: Parameters<typeof transitionOrganizationLifecycle>[0]) => transitionOrganizationLifecycle(params, { requireOrganizationStatus, getOrganizationAccess, canManageOrganizationLifecycle, updateOrganization: async (organizationId, status) => db.organization.update({ where: { id: organizationId }, data: { status: status as any } }), writeAudit: writeOrganizationAudit }), writeOrganizationAudit, auditLog });
+registerPaymentMethodRoutes(router, { db, getOrganizationAccess, isFinanceManager, writeOrganizationAudit });
+registerPaymentsRoutes(router, { db, getOrganizationAccess, canViewAllFinancials, isFinanceManager, requireOrganizationStatus, runFinancialTransaction, writeOrganizationAudit });
 registerMembersRoutes(router, { db, memberCreateSchema, memberUpdateSchema, getOrganizationAccess, hasOrganizationPermission, isOwnerLike, isFounderRole, requireOrganizationStatus, requireMemberCapacity, writeOrganizationAudit });
 registerContributionsRoutes(router, { db, contributionCreateSchema, markContributionPaidSchema, reverseContributionSchema, submitContributionPaymentSchema, reviewContributionPaymentSchema, getOrganizationAccess, canViewAllFinancials, isFinanceManager, requireOrganizationStatus, runFinancialTransaction, writeOrganizationAudit });
 registerLoansRoutes(router, { db, loanApplySchema, loanDecisionSchema, guaranteeDecisionSchema, loanRepaySchema, OrganizationPermission, getOrganizationAccess, hasOrganizationPermission, isFinanceManager, isWelfareApprover, requireOrganizationStatus, requireModuleEnabled, getRequiredGuarantorCount, requireAcceptedLoanGuarantees, getRuleNumber, runFinancialTransaction, writeOrganizationAudit });

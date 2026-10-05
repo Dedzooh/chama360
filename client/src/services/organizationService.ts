@@ -131,6 +131,71 @@ export interface ContributionRecord {
   } | null;
 }
 
+// --- Payment → Allocation → Obligation types -------------------------------
+
+export type ChamaPaymentChannelType = 'MPESA_TILL' | 'MPESA_PAYBILL' | 'TREASURER_MPESA' | 'BANK' | 'OTHER';
+export type ChamaPaymentMethodStatus = 'ACTIVE' | 'PENDING_VERIFICATION' | 'DISABLED';
+
+export interface OrganizationPaymentMethodRecord {
+  id: string;
+  channelType: ChamaPaymentChannelType;
+  label: string;
+  kind: string;
+  value?: string | null;
+  account?: string | null;
+  instructions?: string | null;
+  status: ChamaPaymentMethodStatus;
+  isDefault: boolean;
+  updatedAt?: string;
+}
+
+export interface PaymentAllocationRecord {
+  id: string;
+  memberId: string;
+  member?: { id: string; firstName: string; lastName: string };
+  contributionId?: string | null;
+  contribution?: { id: string; period?: string | null; contributionType?: string | null } | null;
+  kind: 'CONTRIBUTION' | 'CREDIT' | 'UNALLOCATED';
+  period?: string | null;
+  contributionType?: string | null;
+  amount: number;
+}
+
+export interface PaymentRecord {
+  id: string;
+  payerUserId: string;
+  payer?: { id: string; firstName: string; lastName: string };
+  amount: number;
+  allocatedAmount: number;
+  status: string;
+  paymentMethod?: string | null;
+  transactionReference?: string | null;
+  paidAt: string;
+  paymentMethodRef?: { id: string; label: string; channelType: string } | null;
+  allocations: PaymentAllocationRecord[];
+}
+
+export interface OutstandingObligationRecord {
+  contributionId: string;
+  memberId: string;
+  memberName: string;
+  period?: string | null;
+  contributionType?: string | null;
+  amount: number;
+  penalties: number;
+  paid: number;
+  due: number;
+  status: string;
+}
+
+export const channelTypeLabels: Record<ChamaPaymentChannelType, string> = {
+  MPESA_TILL: 'M-Pesa Till',
+  MPESA_PAYBILL: 'M-Pesa PayBill',
+  TREASURER_MPESA: "Treasurer's M-Pesa",
+  BANK: 'Bank',
+  OTHER: 'Other',
+};
+
 export interface ContributionSummary {
   total: number;
   paid: number;
@@ -666,6 +731,88 @@ export const organizationService = {
     const response = await api.patch(`/organizations/${organizationId}/investments/${assetId}`, payload);
     return response.data.asset as InvestmentAsset;
   },
+  listPaymentMethods: async (organizationId: string): Promise<{ methods: OrganizationPaymentMethodRecord[]; canManage: boolean }> => {
+    const response = await api.get(`/organizations/${organizationId}/payment-methods`);
+    return response.data;
+  },
+
+  addPaymentMethod: async (organizationId: string, payload: {
+    channelType: ChamaPaymentChannelType;
+    label: string;
+    tillNumber?: string;
+    paybillNumber?: string;
+    accountNumber?: string;
+    bankName?: string;
+    bankAccountName?: string;
+    bankAccountNumber?: string;
+    phone?: string;
+    recipientName?: string;
+    instructions?: string;
+    status?: ChamaPaymentMethodStatus;
+  }) => {
+    const response = await api.post(`/organizations/${organizationId}/payment-methods`, payload);
+    return response.data.method as OrganizationPaymentMethodRecord;
+  },
+
+  updatePaymentMethod: async (organizationId: string, methodId: string, payload: Partial<OrganizationPaymentMethodRecord>) => {
+    const response = await api.patch(`/organizations/${organizationId}/payment-methods/${methodId}`, payload);
+    return response.data.method as OrganizationPaymentMethodRecord;
+  },
+
+  disablePaymentMethod: async (organizationId: string, methodId: string) => {
+    const response = await api.delete(`/organizations/${organizationId}/payment-methods/${methodId}`);
+    return response.data;
+  },
+
+  listPayments: async (organizationId: string): Promise<PaymentRecord[]> => {
+    const response = await api.get(`/organizations/${organizationId}/payments`);
+    return (response.data.payments ?? []).map((payment: any) => ({
+      ...payment,
+      amount: Number(payment.amount),
+      allocatedAmount: Number(payment.allocatedAmount ?? 0),
+      allocations: (payment.allocations ?? []).map((allocation: any) => ({ ...allocation, amount: Number(allocation.amount) })),
+    }));
+  },
+
+  listPaymentsForMember: async (organizationId: string, memberId: string): Promise<PaymentRecord[]> => {
+    const response = await api.get(`/organizations/${organizationId}/payments/for-member/${memberId}`);
+    return (response.data.payments ?? []).map((payment: any) => ({
+      ...payment,
+      amount: Number(payment.amount),
+      allocations: (payment.allocations ?? []).map((allocation: any) => ({ ...allocation, amount: Number(allocation.amount) })),
+    }));
+  },
+
+  listOutstanding: async (organizationId: string, memberId?: string): Promise<OutstandingObligationRecord[]> => {
+    const response = await api.get(`/organizations/${organizationId}/payments/outstanding`, { params: memberId ? { memberId } : {} });
+    return response.data.outstanding ?? [];
+  },
+
+  recordPayment: async (organizationId: string, payload: {
+    amount: number;
+    payerUserId?: string;
+    paymentMethod?: 'MPESA' | 'BANK' | 'CASH';
+    paymentMethodId?: string;
+    transactionReference?: string;
+    paidAt?: string;
+    autoCredit?: boolean;
+    note?: string;
+    allocations: Array<{ memberId: string; amount: number; contributionId?: string; period?: string; contributionType?: string }>;
+  }) => {
+    const response = await api.post(`/organizations/${organizationId}/payments`, payload);
+    return response.data;
+  },
+
+  reversePayment: async (organizationId: string, paymentId: string, reason: string) => {
+    const response = await api.post(`/organizations/${organizationId}/payments/${paymentId}/reverse`, { reason });
+    return response.data;
+  },
+
+  listUnallocatedPayments: async (organizationId: string): Promise<PaymentRecord[]> => {
+    const response = await api.get(`/organizations/${organizationId}/payments/unallocated`);
+    return response.data.payments ?? [];
+  },
+
   markContributionPaid: async (organizationId: string, contributionId: string, payload: { paymentMethod: 'CASH' | 'MPESA' | 'BANK'; reference?: string; paidAt?: string }) => {
     const response = await api.post(`/organizations/${organizationId}/contributions/${contributionId}/mark-paid`, payload);
     return response.data.contribution as ContributionRecord;

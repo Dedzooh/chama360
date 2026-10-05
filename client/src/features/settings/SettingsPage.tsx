@@ -6,6 +6,7 @@ import { organizationService } from '../../services/organizationService';
 import { getModuleLabel } from '../../config/chamaBlueprint';
 import { documentsToText, getEnabledWelfareCategories, normalizeWelfareRules, textToDocuments, WELFARE_APPROVAL_OPTIONS, type WelfareCategoryRule, type WelfareRulesConfig } from '../../config/welfareRules';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, SelectField, TextField } from '../../design-system';
+import { PaymentMethodsPanel } from '../finance';
 
 type OrganizationMetadata = {
   paymentSettings?: {
@@ -66,6 +67,8 @@ export const Settings = () => {
     inApp: true,
   });
   const [welfareForm, setWelfareForm] = useState<WelfareRulesConfig>(() => normalizeWelfareRules(undefined, true));
+  // Same finance-role gate the Contributions page uses: Founder/Chair/Treasurer/Admin.
+  const canManagePaymentMethods = ['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN'].includes((currentOrganization?.myRole ?? '').toUpperCase());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -406,6 +409,11 @@ export const Settings = () => {
             Save payment settings
           </Button>
         </Card>
+
+        {/* Chama-owned collection channels (Till / PayBill / Treasurer M-Pesa / Bank).
+            Separate from the M-Pesa defaults profile above: these carry their own
+            status and every change is audit-logged with previous and new values. */}
+        <PaymentMethodsPanel organizationId={currentOrganization.id} canManage={canManagePaymentMethods} />
 
       </section> : null}
 

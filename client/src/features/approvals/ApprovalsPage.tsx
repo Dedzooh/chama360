@@ -153,6 +153,8 @@ export const ApprovalsPage = () => {
           members={pendingMembers}
           activeKind={(kind as QueueKind) || 'all'}
           counts={counts}
+          canReview={canReview}
+          saving={saving}
           visibleQueues={visibleQueues}
         />
       ) : (
@@ -215,6 +217,8 @@ const UnifiedQueueList = ({ organizationId, loans, claims, members, activeKind, 
   members: Array<{ id: string; status: string; user?: { firstName?: string; lastName?: string } | null }>;
   activeKind: QueueKind;
   counts: Record<QueueKind, number>;
+  canReview?: boolean;
+  saving?: boolean;
   visibleQueues?: typeof queueItems;
 }) => {
   type UnifiedRow = { key: string; category: Exclude<QueueKind, 'all'>; who: string; what: string; detail: string; when?: string; link?: string };

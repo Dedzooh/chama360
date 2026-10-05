@@ -3,4 +3,5 @@ export { ContributionSummary } from './ContributionSummary';
 export { ContributionTable } from './ContributionTable';
 export { ContributionFilters } from './ContributionFilters';
 export { RecordContributionModal } from './RecordContributionModal';
-export { ContributionReceipt } from './ContributionReceipt';
+export { ContributionReceipt } from './ContributionReceipt';export { PayChooser } from './PayChooser';
+export { PayContributionFlow } from './PayContributionFlow';

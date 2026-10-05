@@ -74,6 +74,26 @@ router.post('/sms-credits/purchase', authenticate, asyncHandler(async (req: Requ
 
 router.get('/plans', (_req, res) => res.json({ plans: subscriptionPlans }));
 
+// Platform billing info. This is the Chama360 subscription collection number
+// (the platform's own paybill/shortcode) — a HARD BOUNDARY from any Chama
+// contribution method. The frontend uses this to render the two payment
+// flows distinctly: "Chama360 Subscription" (green) vs "Chama Contribution"
+// (blue), so a member can never send a contribution to the platform number.
+router.get('/billing/platform-info', authenticate, asyncHandler(async (req, res) => {
+  const configured = subscriptionPaymentService.isConfigured();
+  const organizationId = req.query.organizationId ? organizationIdSchema.parse(req.query.organizationId) : null;
+  if (organizationId) await requireOrganizationBillingAccess(organizationId, req.user!.id);
+  res.json({
+    kind: 'CHAMA360_SUBSCRIPTION',
+    description: 'Pay for your Chama360 plan. This is NOT a Chama contribution.',
+    collectionNumber: configured ? '0713222431' : null,
+    configured,
+    currentPlan: organizationId
+      ? (await prisma.organizationSubscription.findUnique({ where: { organizationId }, select: { plan: true, status: true, currentPeriodEnd: true } }))
+      : null,
+  });
+}));
+
 router.get('/billing-organizations', authenticate, asyncHandler(async (req: Request, res: Response) => {
   const memberships = await prisma.organizationMember.findMany({
     where: {

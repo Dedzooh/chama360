@@ -102,8 +102,8 @@ export const Members = () => {
     if (!currentOrganization?.id || !handoverFrom || !handoverToId) return;
     setHandoverBusy(true);
     try {
-      await organizationService.handoverRole(currentOrganization.id, handoverFrom.id, handoverToId);
-      setError(null);
+      const result = await organizationService.handoverRole(currentOrganization.id, handoverFrom.id, handoverToId);
+      setFeedback(result.message);
       setHandoverFrom(null);
       setHandoverToId('');
       await loadData();
@@ -565,7 +565,7 @@ export const Members = () => {
               <select value={handoverToId} onChange={(event) => setHandoverToId(event.target.value)} className="input w-full">
                 <option value="">Select incoming officer…</option>
                 {activeMembersForHandover.map((member) => (
-                  <option key={member.id} value={member.id}>{member.user?.firstName ?? ''} {member.user?.lastName ?? ''} — {(String(member.role ?? 'Member')).replace(/_/g, ' ')}</option>
+                  <option key={member.id} value={member.id}>{member.user?.firstName ?? ''} {member.user?.lastName ?? ''} — {(String(member.role ?? '') ?? 'Member').replace(/_/g, ' ')}</option>
                 ))}
               </select>
             </label>

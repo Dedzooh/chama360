@@ -7,6 +7,8 @@ import { organizationService, type ContributionRecord, type ContributionSummary 
 import { mpesaService } from '../../services/mpesaService';
 import { Badge, Button, Card, Chip, Dialog, EmptyState, SelectField, TextField } from '../../design-system';
 import { ContributionFilters } from './ContributionFilters';
+import { PayChooser } from './PayChooser';
+import { PayContributionFlow } from './PayContributionFlow';
 
 const CURRENCY = 'KES';
 const formatMoney = (value: number | string | undefined | null) => `${CURRENCY} ${Number(value ?? 0).toLocaleString()}`;
@@ -69,6 +71,8 @@ export const Contributions = () => {
   const [reviewingPayment, setReviewingPayment] = useState(false);
   const [stkPhone, setStkPhone] = useState(user?.phone ?? '');
   const [stkMessage, setStkMessage] = useState<string | null>(null);
+  const [payIntent, setPayIntent] = useState<'CHOOSER' | 'CONTRIBUTION' | null>(null);
+  const [paymentsMade, setPaymentsMade] = useState<import('../../services/organizationService').PaymentRecord[]>([]);
   const [calendarPeriod, setCalendarPeriod] = useState(() => new Date().toISOString().slice(0, 7));
   const [exportingStatement, setExportingStatement] = useState(false);
   const memberReferenceSuffix = (user?.phone ?? user?.id ?? 'MEMBER').replace(/[^a-zA-Z0-9]/g, '').slice(-6).toUpperCase();
@@ -101,6 +105,9 @@ export const Contributions = () => {
       const [summaryData, contributionData] = await Promise.all([organizationService.getContributionSummary(currentOrganization.id), organizationService.listContributions(currentOrganization.id)]);
       setSummary(summaryData);
       setContributions(contributionData);
+      organizationService.listPayments(currentOrganization.id)
+        .then((paymentData) => setPaymentsMade(paymentData))
+        .catch(() => setPaymentsMade([]));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load contributions');
     } finally {
@@ -524,6 +531,19 @@ export const Contributions = () => {
     </details>
   );
 
+  const paidByFor = (contribution: { id: string; memberId: string }) => {
+    // Transparency: show who actually paid for this member's contribution.
+    const payerName = (userId: string) => {
+      const member = members.find((candidate) => (candidate.userId ?? candidate.id) === userId);
+      return member ? `${member.user?.firstName ?? ''} ${member.user?.lastName ?? ''}`.trim() : '';
+    };
+    const allocation = paymentsMade
+      .filter((payment) => payment.status === 'COMPLETED' && payment.allocations.some((entry) => entry.contributionId === contribution.id))
+      .map((payment) => ({ payerId: payment.payerUserId, payerName: payment.payer ? `${payment.payer.firstName} ${payment.payer.lastName}`.trim() : payerName(payment.payerUserId), reference: payment.transactionReference, method: payment.paymentMethodRef?.label ?? payment.paymentMethod, paidAt: payment.paidAt, amount: payment.allocations.find((entry) => entry.contributionId === contribution.id)?.amount ?? 0 }))
+      .filter((entry) => entry.payerId !== contribution.memberId)
+      .at(-1);
+    return allocation ?? null;
+  };
   const mobileLayout = (
     <div className="space-y-4 md:hidden">
       <section className="chama360-module-hero chama360-module-hero-contributions">
@@ -571,6 +591,19 @@ export const Contributions = () => {
       </section>
 
       {error ? <Card className="border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-800">{error}</Card> : null}
+
+      {payIntent === null ? <PayChooser organizationId={currentOrganization.id} organizationName={currentOrganization.name} canManageBilling={canRecord} onSelect={(intent) => { if (intent === 'SUBSCRIPTION') { window.location.hash = '#billing'; } else { setPayIntent('CONTRIBUTION'); } }} /> : null}
+      {payIntent === 'CONTRIBUTION' ? (
+        <Card className="p-5">
+          <PayContributionFlow
+            organizationId={currentOrganization.id}
+            currentUserId={user?.id ?? ''}
+            currentUserName={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim()}
+            members={members}
+            onClose={() => { setPayIntent(null); void loadData(); }}
+          />
+        </Card>
+      ) : null}
 
       {!canRecord ? memberPositionPanel : null}
 
@@ -636,6 +669,7 @@ export const Contributions = () => {
                     {contribution.paidAt ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">Paid {contribution.paidAt.slice(0, 10)}</span> : null}
                     {contribution.reference ? <span className="rounded-full bg-[var(--ds-surface-2)] px-3 py-1">Ref {contribution.reference}</span> : null}
                   </div>
+                  {(() => { const paidBy = paidByFor(contribution); return paidBy ? <p className="mt-2 rounded-[var(--ds-radius-md)] bg-sky-50 px-3 py-2 text-xs text-sky-900">Paid by: <strong>{paidBy.payerName}</strong> · {paidBy.method ?? 'M-Pesa'}{paidBy.reference ? ` · Ref ${paidBy.reference}` : ''}{paidBy.paidAt ? ` · ${new Date(paidBy.paidAt).toLocaleString('en-KE')}` : ''}</p> : null; })()}
                   <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl border border-[var(--ds-border)] p-3"><span className="text-[var(--ds-text-muted)]">Paid</span><p className="mt-1 font-bold">{formatMoney(paidAmountFor(contribution))}</p></div><div className="rounded-xl border border-[var(--ds-border)] p-3"><span className="text-[var(--ds-text-muted)]">Still due</span><p className="mt-1 font-bold">{formatMoney(dueAmountFor(contribution))}</p></div></div>
                   {Number(contribution.penalties ?? 0) > 0 ? <p className="mt-2 text-sm text-rose-700">Penalty included: {formatMoney(contribution.penalties)}</p> : null}
                   {paymentReviewActions(contribution)}
@@ -741,6 +775,18 @@ export const Contributions = () => {
 
       {contributionCalendar}
 
+      {payIntent === null ? <PayChooser organizationId={currentOrganization.id} organizationName={currentOrganization.name} canManageBilling={canRecord} onSelect={(intent) => { if (intent === 'SUBSCRIPTION') { window.location.hash = '#billing'; } else { setPayIntent('CONTRIBUTION'); } }} /> : null}
+      {payIntent === 'CONTRIBUTION' ? (
+        <Card className="p-5">
+          <PayContributionFlow
+            organizationId={currentOrganization.id}
+            currentUserId={user?.id ?? ''}
+            currentUserName={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim()}
+            members={members}
+            onClose={() => { setPayIntent(null); void loadData(); }}
+          />
+        </Card>
+      ) : null}
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <Card id="contribution-ledger" className="p-6">
@@ -791,6 +837,7 @@ export const Contributions = () => {
                       <span>{contribution.paymentMethod ?? 'Unpaid'}</span>
                       {contribution.reference ? <span>Ref {contribution.reference}</span> : null}
                     </div>
+                    {(() => { const paidBy = paidByFor(contribution); return paidBy ? <p className="rounded-[var(--ds-radius-md)] bg-sky-50 px-3 py-2 text-xs text-sky-900">Paid by: <strong>{paidBy.payerName}</strong> · {paidBy.method ?? 'M-Pesa'}{paidBy.reference ? ` · Ref ${paidBy.reference}` : ''}{paidBy.paidAt ? ` · ${new Date(paidBy.paidAt).toLocaleString('en-KE')}` : ''}</p> : null; })()}
                     <div className="mt-3 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-[var(--ds-surface-2)] p-3"><span className="text-[var(--ds-text-muted)]">Paid</span><p className="mt-1 font-bold text-[var(--ds-text)]">{formatMoney(paidAmountFor(contribution))}</p></div><div className="rounded-xl bg-[var(--ds-surface-2)] p-3"><span className="text-[var(--ds-text-muted)]">Still due</span><p className="mt-1 font-bold text-[var(--ds-text)]">{formatMoney(dueAmountFor(contribution))}</p></div></div>
                     {Number(contribution.penalties ?? 0) > 0 ? <p className="mt-2 text-sm text-rose-700">Penalty included: {formatMoney(contribution.penalties)}</p> : null}
                     {paymentReviewActions(contribution)}
