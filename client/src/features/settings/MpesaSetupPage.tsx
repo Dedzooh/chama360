@@ -24,8 +24,8 @@ export const MpesaSetupPage = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const meta = (currentOrganization?.metadata ?? {}) as { paymentSettings?: { stkPushEnabled?: boolean } };
-    setStkEnabled(Boolean(meta.paymentSettings?.stkPushEnabled));
+    const meta = (currentOrganization?.metadata ?? {}) as { stkPushEnabled?: boolean };
+    setStkEnabled(Boolean(meta.stkPushEnabled));
   }, [currentOrganization?.id]);
 
   if (!currentOrganization) {
@@ -40,10 +40,10 @@ export const MpesaSetupPage = () => {
       await organizationService.updateOrganization(currentOrganization.id, {
         metadata: {
           ...((currentOrganization.metadata as Record<string, unknown>) ?? {}),
-          paymentSettings: {
-            ...(((currentOrganization.metadata as any)?.paymentSettings as Record<string, unknown>) ?? {}),
-            stkPushEnabled: stkEnabled,
-          },
+          // Stored as its own metadata key: metadata.paymentSettings is
+          // re-validated by the backend against the legacy payment profile
+          // schema (mode/mpesaNumber) and would reject this toggle.
+          stkPushEnabled: stkEnabled,
         },
       });
       setMessage('STK Push setting saved.');
