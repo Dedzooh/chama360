@@ -52,6 +52,7 @@ export const ROUTES = {
     reports: (organizationId: string) => `/chamas/${organizationId}/reports`,
     documents: (organizationId: string) => `/chamas/${organizationId}/documents`,
     settings: (organizationId: string) => `/chamas/${organizationId}/settings`,
+    mpesaSetup: (organizationId: string) => `/chamas/${organizationId}/mpesa-setup`,
   },
   admin: {
     home: "/admin",

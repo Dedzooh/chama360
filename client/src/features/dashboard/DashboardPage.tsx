@@ -76,6 +76,7 @@ export const Dashboard = () => {
   const [upcomingMeetingRecord, setUpcomingMeetingRecord] = useState<MeetingRecord | null>(null);
   const [contributions, setContributions] = useState<ContributionRecord[]>([]);
   const [myRecordsAvailable, setMyRecordsAvailable] = useState(false);
+  const [paymentMethodCount, setPaymentMethodCount] = useState<number | null>(null);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [claims, setClaims] = useState<WelfareClaimRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
@@ -105,6 +106,7 @@ export const Dashboard = () => {
         setUpcomingMeetingRecord(null);
         setContributions([]);
         setMyRecordsAvailable(false);
+        setPaymentMethodCount(null);
         setLoans([]);
         setClaims([]);
         setMeetings([]);
@@ -117,12 +119,13 @@ export const Dashboard = () => {
       setSignalsError('');
 
       try {
-        const [activityResult, meetingsResult, contributionsResult, loansResult, claimsResult] = await Promise.allSettled([
+        const [activityResult, meetingsResult, contributionsResult, loansResult, claimsResult, methodsResult] = await Promise.allSettled([
           organizationService.listAuditLogs(organization.id),
           organizationService.listMeetings(organization.id),
           organizationService.listContributions(organization.id),
           organizationService.listLoans(organization.id),
           organizationService.listWelfareClaims(organization.id),
+          organizationService.listPaymentMethods(organization.id),
         ]);
 
         if (!active) return;
@@ -141,6 +144,8 @@ export const Dashboard = () => {
         const contributionRecords = contributionsResult.status === 'fulfilled' ? contributionsResult.value : null;
         const loanRecords = loansResult.status === 'fulfilled' ? loansResult.value : [];
         const claimRecords = claimsResult.status === 'fulfilled' ? claimsResult.value : [];
+        const methodRecords = methodsResult.status === 'fulfilled' ? methodsResult.value.methods : [];
+        setPaymentMethodCount(methodRecords.filter((method) => method.status === 'ACTIVE').length);
 
         setRecentActivity(
           logRecords.slice(0, 4).map((log) => ({
@@ -166,6 +171,7 @@ export const Dashboard = () => {
           setUpcomingMeetingRecord(null);
           setContributions([]);
           setMyRecordsAvailable(false);
+          setPaymentMethodCount(null);
           setLoans([]);
           setClaims([]);
           setMeetings([]);
@@ -260,7 +266,7 @@ export const Dashboard = () => {
     { label: 'Invite members', complete: memberCount > 1, to: ROUTES.chama.members(organization.id) },
     { label: 'Set contribution amount', complete: Boolean(organizationMetadata.contributionRules), to: ROUTES.chama.contributions(organization.id) },
     ...(enabledModules.welfare ? [{ label: 'Configure welfare benefits and claims', complete: Boolean(organizationMetadata.welfareRules?.categories?.some((category) => category.enabled)), to: ROUTES.chama.settings(organization.id) }] : []),
-    { label: 'Configure M-Pesa', complete: Boolean(organizationMetadata.paymentSettings?.isEnabled), to: ROUTES.chama.settings(organization.id) },
+    { label: paymentMethodCount === null ? 'Configure M-Pesa' : paymentMethodCount > 0 ? 'M-Pesa configured' : 'Configure M-Pesa', complete: (paymentMethodCount ?? 0) > 0, to: ROUTES.chama.mpesaSetup(organization.id) },
   ] : [];
   const setupComplete = setupSteps.filter((step) => step.complete).length;
   const nextSetupStep = setupSteps.find((step) => !step.complete) ?? setupSteps[setupSteps.length - 1];

@@ -37,6 +37,7 @@ const Investments = page(() => import('./features/investments'), 'Investments');
 const Meetings = page(() => import('./features/meetings'), 'Meetings');
 const Reports = page(() => import('./features/reports'), 'Reports');
 const Settings = page(() => import('./features/settings'), 'Settings');
+const MpesaSetupPage = page(() => import('./features/settings'), 'MpesaSetupPage');
 const Documents = page(() => import('./features/utility'), 'Documents');
 const Voting = page(() => import('./features/voting'), 'Voting');
 const AuditLogs = page(() => import('./features/utility'), 'AuditLogs');
@@ -146,6 +147,7 @@ function App() {
                 <Route path="reports" element={<WorkspaceAccess module="reports" label="Reports"><Reports /></WorkspaceAccess>} />
                 <Route path="documents" element={<WorkspaceAccess module="documents" label="Documents"><PremiumRoute feature="DOCUMENTS"><Documents /></PremiumRoute></WorkspaceAccess>} />
                 <Route path="settings" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'ADMIN']} label="Chama Settings"><Settings /></WorkspaceAccess>} />
+                <Route path="mpesa-setup" element={<WorkspaceAccess roles={['OWNER', 'FOUNDER', 'CHAIR', 'TREASURER', 'ADMIN']} label="M-Pesa Setup"><MpesaSetupPage /></WorkspaceAccess>} />
               </Route>
 
               <Route path="/meetings" element={<Meetings />} />
