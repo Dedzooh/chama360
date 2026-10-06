@@ -51,7 +51,12 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
   inGracePeriod: false,
   loading: false,
   message: '',
-  canUse: (feature) => ['ACTIVE', 'PAST_DUE'].includes(get().status) && PLAN_RANK[get().plan] >= PLAN_RANK[FEATURE_PLAN[feature]],
+  canUse: (feature) => {
+    const { status, plan, trialEndsAt } = get();
+    const trialActive = Boolean(trialEndsAt && new Date(trialEndsAt).getTime() > Date.now());
+    if (trialActive) return true; // 30-day trial unlocks every feature
+    return ['ACTIVE', 'PAST_DUE'].includes(status) && PLAN_RANK[plan] >= PLAN_RANK[FEATURE_PLAN[feature]];
+  },
   showUpgrade: (feature) => set({ promptFeature: feature }),
   closeUpgrade: () => set({ promptFeature: null }),
   setBillingCycle: (billingCycle) => set({ billingCycle }),
