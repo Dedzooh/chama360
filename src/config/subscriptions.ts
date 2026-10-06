@@ -96,3 +96,12 @@ export const getPlanPrice = (plan: SubscriptionPlan, cycle: BillingCycle, member
 };
 
 export const planHasFeature = (plan: SubscriptionPlan, feature: string) => subscriptionPlans[plan].features.includes(feature);
+
+/** Centralized entitlement check: an active trial unlocks every feature regardless of plan. */
+export type SubscriptionEntitlement = { plan: SubscriptionPlan; trialEndsAt?: Date | string | null };
+
+export const isTrialActive = (subscription: { trialEndsAt?: Date | string | null }, now = new Date()) =>
+  Boolean(subscription.trialEndsAt && new Date(subscription.trialEndsAt).getTime() > now.getTime());
+
+export const hasFeatureAccess = (feature: string, subscription: SubscriptionEntitlement, now = new Date()) =>
+  isTrialActive(subscription, now) || planHasFeature(subscription.plan, feature);

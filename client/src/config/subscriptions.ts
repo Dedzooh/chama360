@@ -6,6 +6,15 @@ export type StorageAllowance = { label: string; megabytes: number | null };
 
 export const PLAN_RANK: Record<SubscriptionPlan, number> = { FREE: 0, STARTER: 1, GROWTH: 2, PRO: 3, INVESTMENT_AUTOMATION: 4, ENTERPRISE: 5 };
 export const FEATURE_PLAN: Record<PremiumFeature, SubscriptionPlan> = { ADVANCED_EXPORTS: 'STARTER', DOCUMENTS: 'STARTER', VOTING: 'GROWTH', AUDIT_LOGS: 'GROWTH', MPESA_AUTOMATION: 'PRO', ADMIN_CONTROLS: 'GROWTH', INVESTMENT_AUTOMATION: 'INVESTMENT_AUTOMATION' };
+
+/** Centralized entitlement check: an active trial unlocks every feature regardless of plan. */
+export type SubscriptionEntitlement = { plan: SubscriptionPlan; trialEndsAt?: string | null };
+
+export const isTrialActive = (subscription: { trialEndsAt?: string | null }, now = new Date()) =>
+  Boolean(subscription.trialEndsAt && new Date(subscription.trialEndsAt).getTime() > now.getTime());
+
+export const hasFeatureAccess = (feature: PremiumFeature, subscription: SubscriptionEntitlement, now = new Date()) =>
+  isTrialActive(subscription, now) || PLAN_RANK[subscription.plan] >= PLAN_RANK[FEATURE_PLAN[feature]];
 export const FEATURE_COPY: Record<PremiumFeature, { title: string; description: string }> = {
   ADVANCED_EXPORTS: { title: 'Professional PDF & CSV exports', description: 'Download management reports, member registers, and financial records for review.' },
   DOCUMENTS: { title: 'Document management', description: 'Store and manage member verification and supporting documents.' },

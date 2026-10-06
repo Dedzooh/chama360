@@ -5,9 +5,6 @@ import { config } from '../config/environment';
 
 const GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 
-export const isTrialActive = (subscription: { trialEndsAt: Date | null }, now = new Date()) =>
-  Boolean(subscription.trialEndsAt && subscription.trialEndsAt > now);
-
 export type LifecycleInput = { plan: SubscriptionPlan; status: SubscriptionStatus; currentPeriodEnd: Date | null; gracePeriodEnd: Date | null; cancelAtPeriodEnd: boolean };
 export const getLifecycleTransition = (subscription: LifecycleInput, now = new Date()) => {
   if (subscription.plan === 'FREE' || !subscription.currentPeriodEnd || subscription.currentPeriodEnd > now) return null;

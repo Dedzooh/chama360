@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { BillingCycle, PremiumFeature, SubscriptionPlan } from '../config/subscriptions';
-import { FEATURE_PLAN, PLAN_RANK } from '../config/subscriptions';
+import { hasFeatureAccess } from '../config/subscriptions';
 import { subscriptionService } from '../services/subscriptionService';
 
 interface SubscriptionState {
@@ -53,9 +53,10 @@ export const useSubscriptionStore = create<SubscriptionState>()(persist((set, ge
   message: '',
   canUse: (feature) => {
     const { status, plan, trialEndsAt } = get();
-    const trialActive = Boolean(trialEndsAt && new Date(trialEndsAt).getTime() > Date.now());
-    if (trialActive) return true; // 30-day trial unlocks every feature
-    return ['ACTIVE', 'PAST_DUE'].includes(status) && PLAN_RANK[plan] >= PLAN_RANK[FEATURE_PLAN[feature]];
+    if (!hasFeatureAccess(feature, { plan, trialEndsAt })) return false;
+    // The centralized check covers plan/trial entitlement; the store additionally
+    // requires the subscription lifecycle status to permit feature usage.
+    return ['ACTIVE', 'PAST_DUE'].includes(status);
   },
   showUpgrade: (feature) => set({ promptFeature: feature }),
   closeUpgrade: () => set({ promptFeature: null }),

@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { BadRequestError, ForbiddenError, UnauthorizedError, UpgradeRequiredError } from './errorHandler';
-import { planHasFeature, subscriptionPlans } from '../config/subscriptions';
-import { isTrialActive, subscriptionLifecycleService } from '../services/subscriptionLifecycleService';
+import { hasFeatureAccess, subscriptionPlans } from '../config/subscriptions';
+import { subscriptionLifecycleService } from '../services/subscriptionLifecycleService';
 import { prisma } from '../config/database';
 
 const asString = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -72,8 +72,9 @@ export const requireSubscriptionFeature = (feature: string) => async (req: Reque
     await prisma.commercialFunnelEvent.create({ data: { eventType: 'PREMIUM_FEATURE_ATTEMPTED', userId: req.user.id, organizationId } });
 
     const subscription = await subscriptionLifecycleService.reconcileOrganization(organizationId);
-    const active = isSubscriptionFeatureActive(subscription) || isTrialActive(subscription);
-    if (!active || (!isTrialActive(subscription) && !planHasFeature(subscription.plan, feature))) {
+    const active = isSubscriptionFeatureActive(subscription);
+    // Centralized entitlement: an active trial unlocks every feature regardless of plan.
+    if (!active || !hasFeatureAccess(feature, subscription)) {
       const requiredPlan = Object.entries(subscriptionPlans).find(([, plan]) => plan.features.includes(feature))?.[0] ?? 'PRO';
       return next(new UpgradeRequiredError(feature, requiredPlan));
     }
