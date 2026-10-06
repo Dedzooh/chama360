@@ -606,7 +606,7 @@ export const BottomSheet = ({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 md:hidden">
+    <div className="fixed inset-0 z-50">
       <button type="button" className="absolute inset-0 bg-[var(--ds-overlay)]" aria-label="Close sheet" onClick={onClose} />
       <div className="absolute bottom-0 left-0 right-0 rounded-t-[2rem] border-t border-[var(--ds-border)] bg-[rgba(255,255,255,0.96)] p-4 shadow-[var(--ds-shadow-floating)] animate-[sheet-up_220ms_ease-out]">
         <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-[var(--ds-surface-inset)]" />

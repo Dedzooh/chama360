@@ -291,7 +291,7 @@ export const Layout = ({ children }: LayoutProps) => {
       </nav>
 
       {moreOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/30" onClick={closeMoreMenu} />
           <div className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-white border-t border-(--border) p-4 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
