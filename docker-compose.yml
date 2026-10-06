@@ -41,6 +41,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: chama_app
+    networks:
+      - default
+      - webnet
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -110,4 +113,8 @@ volumes:
 
 networks:
   default:
+    name: chama360-new_backend
+    external: true
+  webnet:
     name: chama_network
+    external: true
