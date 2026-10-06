@@ -254,3 +254,5 @@ docker/nginx/certs/
 # Accidental server artifacts
 /chama-management-system@1.0.0
 /node
+docker-compose.yml.bak-*
+12.2.0
